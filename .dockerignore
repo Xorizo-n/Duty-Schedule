@@ -70,7 +70,6 @@ id_dsa
 # Файлы развертывания
 deploy.sh
 docker-compose.yml
-logrotate.conf
 
 # Системные файлы Docker
 .dockerignore
