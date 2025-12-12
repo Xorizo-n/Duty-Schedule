@@ -12,11 +12,6 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ Docker Compose не установлен"
-    exit 1
-fi
-
 # Проверка файлов
 if [ ! -f "credentials.json" ]; then
     echo "❌ Файл credentials.json не найден"
