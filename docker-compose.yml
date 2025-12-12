@@ -1,0 +1,45 @@
+services:
+  duty-schedule:
+    image: koroserg/duty-schedule:latest
+    container_name: duty-schedule-app
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
+      - GOOGLE_CREDENTIALS_FILE=/app/credentials.json
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - duty-logs:/var/log/duty-app
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      - duty-network
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: duty-watchtower
+    command: 
+      - "--interval"
+      - "300"  # Проверять каждые 5 минут
+      - "--cleanup"  # Удалять старые образы
+      - "--label-enable"  # Обновлять только с меткой
+      - "duty-schedule-app"  # Конкретный контейнер
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    networks:
+      - duty-network
+
+volumes:
+  duty-logs:
+
+networks:
+  duty-network:
+    driver: bridge

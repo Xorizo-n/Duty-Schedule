@@ -2,4 +2,3 @@ flask==2.3.3
 gspread==5.9.0
 google-auth==2.22.0
 python-dotenv==1.0.0
-pyinstaller==5.13.0
