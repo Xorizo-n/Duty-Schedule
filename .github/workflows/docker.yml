@@ -28,10 +28,18 @@ jobs:
       with:
         images: ${{ secrets.DOCKERHUB_USERNAME }}/duty-schedule
         tags: |
-          type=ref,event=branch
+          # Тег latest для основной ветки
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          
+          # Теги для версий
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
-          type=sha,prefix={{branch}}-
+          
+          # Тег для ветки main (без префикса)
+          type=ref,event=branch
+          
+          # Тег с SHA (только для не-main веток)
+          type=sha,prefix={{branch}}-,enable=${{ github.ref != 'refs/heads/main' }}
     
     - name: Build and push
       uses: docker/build-push-action@v4

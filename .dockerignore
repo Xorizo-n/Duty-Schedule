@@ -1,0 +1,117 @@
+# Docker ignore файл
+# ===========================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Виртуальное окружение
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Файлы учетных данных - НИКОГДА в образ!
+credentials.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.gpg
+*.asc
+id_rsa
+id_dsa
+*.pub
+
+# Переменные окружения
+.env
+.env.*
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Файлы развертывания
+deploy.sh
+docker-compose.yml
+logrotate.conf
+
+# Системные файлы Docker
+.dockerignore
+Dockerfile*
+docker-compose*
+compose.yml
+docker-compose.override.yml
+
+# Временные файлы
+tmp/
+temp/
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# Тесты
+tests/
+test/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Документация
+docs/
+*.md
+!README.md
+!CHANGELOG.md
+*.txt
+!LICENSE.txt
+
+# Исключения (что НУЖНО включать)
+!requirements.txt
+!duty_app.py
+!static/
+!templates/
+!.env.example
