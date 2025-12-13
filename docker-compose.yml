@@ -23,19 +23,15 @@ services:
       - duty-network
 
   watchtower:
-    image: containrrr/watchtower
-    container_name: duty-watchtower
-    command: 
-      - "--interval"
-      - "300"  # Проверять каждые 5 минут
-      - "--cleanup"  # Удалять старые образы
-      - "--label-enable"  # Обновлять только с меткой
-      - "duty-schedule-app"  # Конкретный контейнер
+    image: containrrr/watchtower:latest  # или конкретную версию
+    container_name: watchtower
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
-    networks:
-      - duty-network
+    command: --interval 300 --scope duty-schedule --cleanup
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300
+      - TZ=${TZ}
 
 volumes:
   duty-logs:
