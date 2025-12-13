@@ -1,35 +1,22 @@
-FROM python:3.11-slim as builder
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Копируем зависимости отдельно для кэширования
+# Копируем зависимости
 COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Финальный образ
-FROM python:3.9-slim
-
-WORKDIR /app
-
-# Копируем зависимости из builder
-COPY --from=builder /root/.local /root/.local
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Копируем код приложения
 COPY duty_app.py .
 COPY templates/ ./templates/
 COPY static/ ./static/
-COPY logrotate.conf /etc/logrotate.d/duty-app
 
-# Создаем пользователя
-RUN useradd -m -u 1000 appuser && \
-    chown -R appuser:appuser /app && \
-    mkdir -p /var/log/duty-app && \
-    chown -R appuser:appuser /var/log/duty-app
-
+# Создаем пользователя для безопасности
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
-ENV PATH=/root/.local/bin:$PATH \
-    PYTHONUNBUFFERED=1 \
-    FLASK_DEBUG=0
+EXPOSE 5000
 
-ENTRYPOINT ["python", "duty_app.py"]
+CMD ["python", "duty_app.py"]

@@ -99,7 +99,7 @@ GOOGLE_SHEET_URL=$google_url
 
 # Настройки приложения
 FLASK_ENV=production
-FLASK_APP=app.py
+FLASK_APP=duty_app.py
 TZ=Europe/Moscow
 GOOGLE_CREDENTIALS_FILE=credentials.json
 

@@ -1,41 +1,48 @@
 services:
   duty-schedule:
+    build: .
     image: koroserg/duty-schedule:latest
     container_name: duty-schedule-app
     restart: unless-stopped
     ports:
       - "5000:5000"
     environment:
+      - FLASK_ENV=production
+      - FLASK_APP=duty_app.py
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
-      - GOOGLE_CREDENTIALS_FILE=/app/credentials.json
+      - GOOGLE_CREDENTIALS_FILE=credentials.json
+      - TZ=Europe/Moscow
     volumes:
       - ./credentials.json:/app/credentials.json:ro
-      - duty-logs:/var/log/duty-app
+      - duty_logs:/var/log/duty-app
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.scope=duty-schedule"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-    networks:
-      - duty-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   watchtower:
-    image: containrrr/watchtower:latest  # или конкретную версию
-    container_name: watchtower
+    image: containrrr/watchtower:latest
+    container_name: duty-watchtower
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 300 --scope duty-schedule --cleanup
+    command: --interval 300 --scope duty-schedule --cleanup --monitor-only
     environment:
       - WATCHTOWER_POLL_INTERVAL=300
-      - TZ=${TZ}
+      - TZ=Europe/Moscow
+      - DOCKER_API_VERSION=1.44
+    depends_on:
+      - duty-schedule
 
 volumes:
-  duty-logs:
-
-networks:
-  duty-network:
-    driver: bridge
+  duty_logs:
