@@ -11,7 +11,7 @@ services:
       - FLASK_APP=duty_app.py
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
-      - TZ=Europe/Moscow
+      - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - duty_logs:/var/log/duty-app
@@ -39,7 +39,7 @@ services:
     command: --interval 300 --scope duty-schedule --cleanup --monitor-only
     environment:
       - WATCHTOWER_POLL_INTERVAL=300
-      - TZ=Europe/Moscow
+      - TZ=Asia/Yekaterinburg
       - DOCKER_API_VERSION=1.44
     depends_on:
       - duty-schedule
