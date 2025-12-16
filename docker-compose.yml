@@ -11,6 +11,7 @@ services:
       - FLASK_APP=duty_app.py
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
+      - SERVER_TIMEZONE=Asia/Yekaterinburg
       - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
@@ -36,9 +37,9 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 300 --scope duty-schedule --cleanup --monitor-only
+    command: --interval 120 --scope duty-schedule --cleanup
     environment:
-      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_POLL_INTERVAL=120
       - TZ=Asia/Yekaterinburg
       - DOCKER_API_VERSION=1.44
     depends_on:
