@@ -58,7 +58,7 @@
         </div>
 
         <!-- Ближайшие 2 недели или сообщение об ошибке -->
-        <div class="schedule-section glass-effect">
+        <div class="schedule-section glass-effect" id="schedule-container">
             {% if error %}
             <!-- Отображение ошибки -->
             <div class="error-container">
@@ -117,7 +117,7 @@
 
         <!-- Время обновления -->
         <div class="last-updated glass-effect">
-            Обновлено: <span id="last-updated-time">{{ last_updated }}</span>
+            Обновлено: <span id="last-updated-time"></span>
         </div>
     </div>
 
@@ -134,6 +134,13 @@
                 this.dataUpdateInterval = null;
                 this.timeUpdateInterval = null;
                 this.isFetching = false;
+
+                // Инициализируем время последнего обновления
+                this.updateLastUpdatedTime(new Date().toLocaleTimeString('ru-RU', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }));
 
                 this.init();
             }
@@ -189,7 +196,17 @@
 
                     if (data.success) {
                         this.processData(data.data);
-                        console.log('✅ Данные обновлены:', new Date().toLocaleTimeString());
+
+                        // Обновляем время последнего обновления (локальное время клиента)
+                        const now = new Date();
+                        const updateTime = now.toLocaleTimeString('ru-RU', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                        });
+                        this.updateLastUpdatedTime(updateTime);
+
+                        console.log('✅ Данные обновлены:', now.toLocaleTimeString());
                     } else {
                         throw new Error('Invalid response');
                     }
@@ -202,8 +219,8 @@
             }
 
             processData(data) {
-                // Сохраняем серверное время
-                this.serverNTPTime = data.ntp_timestamp * 1000;
+                // Сохраняем серверное время из timestamp
+                this.serverNTPTime = data.timestamp * 1000;
 
                 // Обновляем дату
                 const today = new Date(data.today);
@@ -214,9 +231,6 @@
 
                 // Обновляем расписание
                 this.updateSchedule(data.weeks);
-
-                // Обновляем время последнего обновления
-                this.updateLastUpdatedTime(data.last_update);
             }
 
             updateTodayDuty(todayDuty) {
