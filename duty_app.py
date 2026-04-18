@@ -1,18 +1,21 @@
 from flask import Flask, render_template, jsonify
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import os
 import re
 import sys
 import logging
 import time
 import threading
+import hashlib
+import json
+from urllib.parse import urlencode
+from urllib.request import urlopen
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 import pytz
 import ntplib
-from datetime import datetime, timezone
 import socket
 
 # Загружаем переменные окружения
@@ -27,6 +30,10 @@ app = Flask(__name__)
 GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL')
 CREDENTIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
 SERVER_TIMEZONE = os.getenv('SERVER_TIMEZONE', 'Asia/Yekaterinburg')
+VK_BOT_TOKEN = os.getenv('VK_BOT_TOKEN')
+VK_PEER_ID = os.getenv('VK_PEER_ID')
+VK_API_VERSION = os.getenv('VK_API_VERSION', '5.199')
+VK_USERS_FILE = os.getenv('VK_USERS_FILE', 'vk_users.json')
 
 if not GOOGLE_SHEET_URL:
     raise ValueError("GOOGLE_SHEET_URL не установлен в переменных окружения")
@@ -39,6 +46,8 @@ if not GOOGLE_SHEET_URL:
 data_cache = {
     'schedule': None,
     'last_update': 0,
+    'last_hash': None,
+    'last_notifications': {},
     'error': None,
     'ntp_time': None,
     'ntp_last_sync': 0
@@ -53,6 +62,7 @@ NTP_UPDATE_INTERVAL = 60     # 1 минута
 
 # Версия приложения
 APP_VERSION = "2.1.0"
+server_tz = pytz.timezone(SERVER_TIMEZONE)
 
 # =============================================================================
 # НАСТРОЙКА ЛОГИРОВАНИЯ
@@ -129,7 +139,6 @@ def get_ntp_time():
             ntp_time = datetime.fromtimestamp(ntp_timestamp, tz=timezone.utc)
             
             # Конвертируем в указанный часовой пояс сервера
-            server_tz = pytz.timezone(SERVER_TIMEZONE)
             ntp_time = ntp_time.astimezone(server_tz)
             
             logger.info(f"✅ Время синхронизировано с {ntp_server}: {ntp_time.strftime('%H:%M:%S')}")
@@ -342,7 +351,15 @@ def update_google_sheets():
             
             # Объединяем расписания
             combined_schedule = combine_schedules(evening_schedule, morning_schedule)
+            new_hash = calculate_schedule_hash(combined_schedule)
             
+            # Проверка хэша на изменения в расписании
+            if data_cache['last_hash'] != new_hash:
+                logger.info("📢 Обнаружено изменение расписания")
+                data_cache['last_hash'] = new_hash
+                
+                trigger_schedule_changed(combined_schedule)
+
             # Логируем результат объединения
             logger.info("📊 Результат объединения расписаний (первые 10 записей):")
             for i, duty in enumerate(combined_schedule[:10]):
@@ -467,7 +484,7 @@ def get_today_duty(schedule_data):
     if not schedule_data:
         return None
     
-    today = date.today()
+    today = get_current_datetime().date()
     for duty in schedule_data:
         if duty['date'] == today:
             return duty
@@ -478,7 +495,7 @@ def get_two_work_weeks(schedule_data):
     if not schedule_data:
         return []
     
-    today = date.today()
+    today = get_current_datetime().date()
     current_week_start = today - timedelta(days=today.weekday())
     
     if today.weekday() == 6:  # Воскресенье
@@ -526,6 +543,234 @@ def get_two_work_weeks(schedule_data):
     return display_weeks
 
 # =============================================================================
+# Работа с ботом ВК
+# =============================================================================
+
+def calculate_schedule_hash(schedule):
+    serialized = json.dumps(schedule, default=str, sort_keys=True)
+    return hashlib.md5(serialized.encode()).hexdigest()
+
+def trigger_schedule_changed(schedule):
+    logger.info("🔔 Триггер: расписание изменилось")
+
+def get_current_datetime():
+    """Возвращает текущее время в часовом поясе сервера."""
+    ntp_time = data_cache.get('ntp_time')
+    ntp_last_sync = data_cache.get('ntp_last_sync', 0)
+    if ntp_time:
+        elapsed_seconds = max(0, time.time() - ntp_last_sync)
+        return (ntp_time + timedelta(seconds=elapsed_seconds)).astimezone(server_tz)
+    return datetime.now(server_tz)
+
+def get_schedule_entry_by_date(schedule, target_date):
+    """Находит запись расписания по дате."""
+    if not schedule:
+        return None
+    for duty in schedule:
+        if duty.get('date') == target_date:
+            return duty
+    return None
+
+def load_vk_user_mapping():
+    """Загружает соответствие имен из расписания и VK user id."""
+    if not os.path.exists(VK_USERS_FILE):
+        logger.warning(f"Файл соответствий VK не найден: {VK_USERS_FILE}")
+        return {}
+
+    try:
+        with open(VK_USERS_FILE, 'r', encoding='utf-8') as file:
+            mapping = json.load(file)
+
+        if not isinstance(mapping, dict):
+            logger.error(f"Файл {VK_USERS_FILE} должен содержать JSON-объект")
+            return {}
+
+        return mapping
+    except Exception as e:
+        logger.error(f"Не удалось загрузить соответствия VK из {VK_USERS_FILE}: {e}")
+        return {}
+
+def get_vk_mention(duty_name, user_mapping=None):
+    """Возвращает VK mention для имени из расписания."""
+    duty_name = clean_name(duty_name)
+    if not duty_name:
+        return ""
+
+    if user_mapping is None:
+        user_mapping = load_vk_user_mapping()
+
+    user_info = user_mapping.get(duty_name)
+    if user_info is None:
+        logger.warning(f"Для '{duty_name}' не найден VK id, используем обычное имя")
+        return duty_name
+
+    if isinstance(user_info, int) or (isinstance(user_info, str) and str(user_info).isdigit()):
+        vk_id = int(user_info)
+        label = duty_name
+    elif isinstance(user_info, dict):
+        vk_id = user_info.get('id')
+        label = user_info.get('label', duty_name)
+    else:
+        logger.warning(f"Некорректный формат VK соответствия для '{duty_name}'")
+        return duty_name
+
+    if vk_id is None or not str(vk_id).lstrip('-').isdigit():
+        logger.warning(f"Некорректный VK id для '{duty_name}': {vk_id}")
+        return duty_name
+
+    return f"[id{int(vk_id)}|{label}]"
+
+def split_duty_names(duty_name):
+    """Разбивает строку дежурных на отдельные Фамилия Имя."""
+    normalized_name = clean_name(duty_name)
+    if not normalized_name:
+        return []
+
+    # Сначала обычный случай: разделение по запятым
+    if ',' in normalized_name:
+        return [part.strip() for part in re.split(r'\s*,\s*', normalized_name) if part.strip()]
+
+    # Если запятых нет, пробуем разбить по словам
+    words = normalized_name.split()
+
+    # Например: "Иванов Иван Ильин Илья" -> ["Иванов Иван", "Ильин Илья"]
+    if len(words) > 2 and len(words) % 2 == 0:
+        return [' '.join(words[i:i+2]) for i in range(0, len(words), 2)]
+
+    # Иначе считаем, что это одно имя
+    return [normalized_name]
+
+def format_vk_mentions(duty_name, user_mapping=None):
+    """Формирует список VK mention-меток для одного или нескольких дежурных."""
+    duty_names = split_duty_names(duty_name)
+    if not duty_names:
+        return ""
+
+    if user_mapping is None:
+        user_mapping = load_vk_user_mapping()
+
+    mentions = [get_vk_mention(name, user_mapping) for name in duty_names]
+    if len(mentions) == 1:
+        return mentions[0]
+
+    return ", ".join(mentions[:-1]) + f" и {mentions[-1]}"
+
+def format_vk_notification(notification_type, duty_date, duty_name):
+    """Формирует текст уведомления для VK."""
+    user_mapping = load_vk_user_mapping()
+    duty_names = split_duty_names(duty_name)
+    duty_label = format_vk_mentions(duty_name, user_mapping)
+    verb = "дежурят" if len(duty_names) > 1 else "дежурит"
+    date_label = duty_date.strftime('%d.%m')
+    weekday_label = get_weekday_name(duty_date)
+
+    if notification_type == 'evening_today':
+        return (
+            f"Сегодня ({date_label}, {weekday_label}) вечером {verb}: {duty_label}."
+        )
+
+    if notification_type == 'saturday_tomorrow':
+        return (
+            f"Напоминание: в субботу ({date_label}, {weekday_label}) {verb}: {duty_label}."
+        )
+
+    return (
+        f"Завтра ({date_label}, {weekday_label}) утром {verb}: {duty_label}."
+    )
+
+def send_vk_message(message):
+    """Отправляет сообщение через VK API."""
+    if not VK_BOT_TOKEN or not VK_PEER_ID:
+        logger.info("VK уведомления отключены: не заданы VK_BOT_TOKEN/VK_PEER_ID")
+        return False
+
+    random_id_source = f"{time.time()}:{message}"
+    random_id = int(hashlib.md5(random_id_source.encode('utf-8')).hexdigest()[:8], 16)
+    params = {
+        'access_token': VK_BOT_TOKEN,
+        'v': VK_API_VERSION,
+        'peer_id': VK_PEER_ID,
+        'message': message,
+        'random_id': random_id
+    }
+
+    try:
+        request_url = f"https://api.vk.com/method/messages.send?{urlencode(params)}"
+        with urlopen(request_url, timeout=10) as response:
+            payload = json.loads(response.read().decode('utf-8'))
+
+        if payload.get('error'):
+            logger.error(f"VK API ошибка: {payload['error']}")
+            return False
+
+        logger.info(f"VK уведомление отправлено успешно: {payload.get('response')}")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка отправки VK уведомления: {e}")
+        return False
+
+def check_upcoming_duties():
+    """Проверяет, пора ли отправлять уведомления о дежурствах."""
+    current_dt = get_current_datetime()
+    current_date = current_dt.date()
+
+    if current_dt.hour == 10 and current_dt.minute == 0:
+        notification_key = f"evening_today:{current_date.isoformat()}"
+        with cache_lock:
+            if data_cache['last_notifications'].get(notification_key):
+                return
+            schedule = list(data_cache.get('schedule') or [])
+
+        today_duty = get_schedule_entry_by_date(schedule, current_date)
+        duty_name = (today_duty or {}).get('evening', '').strip()
+        if not duty_name:
+            logger.info(f"На {current_date} нет вечернего дежурства для уведомления")
+            return
+
+        message = format_vk_notification('evening_today', current_date, duty_name)
+        if send_vk_message(message):
+            with cache_lock:
+                data_cache['last_notifications'][notification_key] = current_dt.isoformat()
+            logger.info(f"Отправлено уведомление о вечернем дежурстве на {current_date}")
+
+    if current_dt.hour == 19 and current_dt.minute == 00:
+        next_date = current_date + timedelta(days=1)
+        is_saturday = next_date.weekday() == 5
+        notification_type = 'saturday_tomorrow' if is_saturday else 'morning_tomorrow'
+        notification_key = f"{notification_type}:{next_date.isoformat()}"
+        with cache_lock:
+            if data_cache['last_notifications'].get(notification_key):
+                return
+            schedule = list(data_cache.get('schedule') or [])
+
+        tomorrow_duty = get_schedule_entry_by_date(schedule, next_date)
+        duty_name = (tomorrow_duty or {}).get('evening', '').strip() if is_saturday else (tomorrow_duty or {}).get('morning', '').strip()
+        if not duty_name:
+            if is_saturday:
+                logger.info(f"На {next_date} нет субботнего дежурства для уведомления")
+            else:
+                logger.info(f"На {next_date} нет утреннего дежурства для уведомления")
+            return
+
+        message = format_vk_notification(notification_type, next_date, duty_name)
+        if send_vk_message(message):
+            with cache_lock:
+                data_cache['last_notifications'][notification_key] = current_dt.isoformat()
+            if is_saturday:
+                logger.info(f"Отправлено уведомление о дежурстве на субботу {next_date}")
+            else:
+                logger.info(f"Отправлено уведомление об утреннем дежурстве на {next_date}")
+
+def notification_checker():
+    logger.info("🚀 Проверка уведомлений запущена")
+    while True:
+        try:
+            check_upcoming_duties()
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"Ошибка notification_checker: {e}")
+
+# =============================================================================
 # API ЭНДПОИНТЫ
 # =============================================================================
 
@@ -559,7 +804,7 @@ def get_data():
         return jsonify({
             'success': True,
             'data': {
-                'today': date.today().strftime('%Y-%m-%d'),
+                'today': get_current_datetime().date().strftime('%Y-%m-%d'),
                 'today_duty': {
                     'morning': today_duty.get('morning', '') if today_duty else '',
                     'evening': today_duty.get('evening', '') if today_duty else '',
@@ -584,6 +829,11 @@ def api_health():
             'timestamp': time.time()
         })
 
+@app.route('/health')
+def health():
+    """Health check для Docker."""
+    return api_health()
+
 # =============================================================================
 # МАРШРУТЫ ДЛЯ ОТОБРАЖЕНИЯ
 # =============================================================================
@@ -600,7 +850,7 @@ def index():
         if ntp_time:
             current_time = ntp_time.strftime('%H:%M:%S')
         else:
-            current_time = datetime.now(pytz.timezone(SERVER_TIMEZONE)).strftime('%H:%M:%S')
+            current_time = get_current_datetime().strftime('%H:%M:%S')
         
         # Время последнего обновления (ТОЛЬКО ВРЕМЯ!)
         last_update = data_cache.get('last_update', 0)
@@ -616,7 +866,7 @@ def index():
         return render_template('index.html',
                              today_duty=today_duty,
                              weeks=weeks,
-                             today=date.today(),
+                             today=get_current_datetime().date(),
                              current_time=current_time,
                              last_updated=last_updated,  # Только время
                              error=error,
@@ -635,6 +885,7 @@ def main():
     print(f"⏰ Синхронизация времени: каждые {NTP_UPDATE_INTERVAL} секунд")
     print(f"🌍 Часовой пояс сервера: {SERVER_TIMEZONE}")
     print(f"🔗 Google Sheet URL: {GOOGLE_SHEET_URL[:50]}...")
+    print(f"💬 VK уведомления: {'включены' if VK_BOT_TOKEN and VK_PEER_ID else 'отключены'}")
     print(f"📦 Версия: {APP_VERSION}")
     print("=" * 60)
     
@@ -642,6 +893,11 @@ def main():
     updater_thread = threading.Thread(target=background_updater, daemon=True)
     updater_thread.start()
     logger.info("✅ Фоновый обновитель запущен")
+
+    notification_thread = threading.Thread(target=notification_checker, daemon=True)
+    notification_thread.start()
+    logger.info("✅ Проверка уведомлений запущена")
+
     
     try:
         app.run(debug=False, host='0.0.0.0', port=5000)

@@ -12,9 +12,14 @@ services:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
       - SERVER_TIMEZONE=Asia/Yekaterinburg
+      - VK_BOT_TOKEN=${VK_BOT_TOKEN}
+      - VK_PEER_ID=${VK_PEER_ID}
+      - VK_API_VERSION=${VK_API_VERSION:-5.199}
+      - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
       - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
+      - ./vk_users.json:/app/vk_users.json:ro
       - duty_logs:/var/log/duty-app
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
