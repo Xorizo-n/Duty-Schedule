@@ -16,6 +16,8 @@ services:
       - VK_PEER_ID=${VK_PEER_ID}
       - VK_API_VERSION=${VK_API_VERSION:-5.199}
       - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
+      - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
+      - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
       - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
@@ -25,7 +27,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5).read()"]
       interval: 30s
       timeout: 10s
       retries: 3

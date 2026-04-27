@@ -34,6 +34,8 @@ VK_BOT_TOKEN = os.getenv('VK_BOT_TOKEN')
 VK_PEER_ID = os.getenv('VK_PEER_ID')
 VK_API_VERSION = os.getenv('VK_API_VERSION', '5.199')
 VK_USERS_FILE = os.getenv('VK_USERS_FILE', 'vk_users.json')
+CONSOLE_LOG_LEVEL = os.getenv('CONSOLE_LOG_LEVEL', 'INFO').upper()
+FILE_LOG_LEVEL = os.getenv('FILE_LOG_LEVEL', 'WARNING').upper()
 
 if not GOOGLE_SHEET_URL:
     raise ValueError("GOOGLE_SHEET_URL не установлен в переменных окружения")
@@ -71,7 +73,11 @@ server_tz = pytz.timezone(SERVER_TIMEZONE)
 def setup_logging():
     """Настройка логирования"""
     logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)
+    logger.handlers.clear()
+
+    console_level = getattr(logging, CONSOLE_LOG_LEVEL, logging.INFO)
+    file_level = getattr(logging, FILE_LOG_LEVEL, logging.WARNING)
+    logger.setLevel(min(console_level, file_level))
     
     formatter = logging.Formatter(
         '%(asctime)s - %(levelname)s - %(message)s',
@@ -80,7 +86,7 @@ def setup_logging():
     
     # Консольный вывод
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(console_level)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     
@@ -98,7 +104,7 @@ def setup_logging():
             backupCount=5,
             encoding='utf-8'
         )
-        file_handler.setLevel(logging.WARNING)
+        file_handler.setLevel(file_level)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
         
@@ -159,16 +165,18 @@ def get_ntp_time():
 
 def update_ntp_time():
     """Обновление времени с NTP сервера"""
-    with cache_lock:
-        try:
-            ntp_time = get_ntp_time()
+    try:
+        ntp_time = get_ntp_time()
+        with cache_lock:
             data_cache['ntp_time'] = ntp_time
             data_cache['ntp_last_sync'] = time.time()
-            logger.info(f"NTP время обновлено: {ntp_time.strftime('%H:%M:%S')}")
-        except Exception as e:
-            logger.error(f"Ошибка обновления NTP времени: {e}")
-            # Используем текущее время как fallback
+        logger.info(f"NTP время обновлено: {ntp_time.strftime('%H:%M:%S')}")
+    except Exception as e:
+        logger.error(f"Ошибка обновления NTP времени: {e}")
+        # Используем текущее время как fallback
+        with cache_lock:
             data_cache['ntp_time'] = datetime.now(pytz.timezone(SERVER_TIMEZONE))
+            data_cache['ntp_last_sync'] = time.time()
 
 # =============================================================================
 # ФУНКЦИИ ДЛЯ РАБОТЫ С GOOGLE SHEETS
@@ -287,93 +295,92 @@ def parse_schedule_data(worksheet, duty_type='evening'):
 
 def update_google_sheets():
     """Обновление данных из Google Sheets (утренние и вечерние дежурства)"""
-    with cache_lock:
+    try:
+        logger.info("🔄 Обновление данных из Google Sheets...")
+        
+        client = get_google_sheets_client()
+        if not client:
+            error_message = "Не удалось инициализировать клиент Google Sheets"
+            with cache_lock:
+                data_cache['error'] = error_message
+            logger.error(error_message)
+            return
+        
+        # Получаем данные из двух листов
+        sheet = client.open_by_url(GOOGLE_SHEET_URL)
+        
+        evening_schedule = []
+        morning_schedule = []
+        
+        # Вечерние дежурства
         try:
-            logger.info("🔄 Обновление данных из Google Sheets...")
-            
-            client = get_google_sheets_client()
-            if not client:
-                data_cache['error'] = "Не удалось инициализировать клиент Google Sheets"
-                logger.error(data_cache['error'])
-                return
-            
-            # Получаем данные из двух листов
-            sheet = client.open_by_url(GOOGLE_SHEET_URL)
-            
-            evening_schedule = []
-            morning_schedule = []
-            
-            # Вечерние дежурства
-            try:
-                evening_ws = sheet.worksheet("Вечернее дежурство")
-                evening_data = parse_schedule_data(evening_ws, duty_type='evening')
-                if evening_data:
-                    evening_schedule = evening_data
-                    logger.info(f"✅ Вечерние дежурства: {len(evening_data)} записей")
-                    # Логируем первые 5 дат для отладки
-                    for i, duty in enumerate(evening_data[:5]):
-                        logger.info(f"  Вечер {i+1}: {duty['date']} - {duty['evening']}")
-                else:
-                    logger.warning("Вечерние дежурства: данные не найдены")
-            except Exception as e:
-                logger.error(f"Ошибка при чтении листа 'Вечернее дежурство': {e}")
-            
-            # Утренние дежурства
-            try:
-                morning_ws = sheet.worksheet("Дежурство по утрам")
-                morning_data = parse_schedule_data(morning_ws, duty_type='morning')
-                if morning_data:
-                    morning_schedule = morning_data
-                    logger.info(f"✅ Утренние дежурства: {len(morning_data)} записей")
-                    # Логируем первые 5 дат для отладки
-                    for i, duty in enumerate(morning_data[:5]):
-                        logger.info(f"  Утро {i+1}: {duty['date']} - {duty['morning']}")
-                else:
-                    logger.warning("Утренние дежурства: данные не найдены")
-            except Exception as e:
-                logger.warning(f"Не удалось прочитать лист 'Дежурство по утрам': {e}")
-                # Это нормально, если утренних дежурств нет
-            
-            # Отладочная информация
-            logger.info("📊 Статистика перед объединением:")
-            logger.info(f"  Вечерних записей: {len(evening_schedule)}")
-            logger.info(f"  Утренних записей: {len(morning_schedule)}")
-            
-            # Проверяем, есть ли общие даты
-            evening_dates = {d['date'] for d in evening_schedule}
-            morning_dates = {d['date'] for d in morning_schedule}
-            common_dates = evening_dates & morning_dates
-            
-            logger.info(f"  Общие даты: {len(common_dates)}")
-            if common_dates:
-                for date in sorted(list(common_dates))[:5]:
-                    logger.info(f"    - {date}")
-            
-            # Объединяем расписания
-            combined_schedule = combine_schedules(evening_schedule, morning_schedule)
-            new_hash = calculate_schedule_hash(combined_schedule)
-            
-            # Проверка хэша на изменения в расписании
-            if data_cache['last_hash'] != new_hash:
-                logger.info("📢 Обнаружено изменение расписания")
-                data_cache['last_hash'] = new_hash
-                
-                trigger_schedule_changed(combined_schedule)
+            evening_ws = sheet.worksheet("Вечернее дежурство")
+            evening_data = parse_schedule_data(evening_ws, duty_type='evening')
+            if evening_data:
+                evening_schedule = evening_data
+                logger.info(f"✅ Вечерние дежурства: {len(evening_data)} записей")
+                for i, duty in enumerate(evening_data[:5]):
+                    logger.info(f"  Вечер {i+1}: {duty['date']} - {duty['evening']}")
+            else:
+                logger.warning("Вечерние дежурства: данные не найдены")
+        except Exception as e:
+            logger.error(f"Ошибка при чтении листа 'Вечернее дежурство': {e}")
+        
+        # Утренние дежурства
+        try:
+            morning_ws = sheet.worksheet("Дежурство по утрам")
+            morning_data = parse_schedule_data(morning_ws, duty_type='morning')
+            if morning_data:
+                morning_schedule = morning_data
+                logger.info(f"✅ Утренние дежурства: {len(morning_data)} записей")
+                for i, duty in enumerate(morning_data[:5]):
+                    logger.info(f"  Утро {i+1}: {duty['date']} - {duty['morning']}")
+            else:
+                logger.warning("Утренние дежурства: данные не найдены")
+        except Exception as e:
+            logger.warning(f"Не удалось прочитать лист 'Дежурство по утрам': {e}")
+        
+        logger.info("📊 Статистика перед объединением:")
+        logger.info(f"  Вечерних записей: {len(evening_schedule)}")
+        logger.info(f"  Утренних записей: {len(morning_schedule)}")
+        
+        evening_dates = {d['date'] for d in evening_schedule}
+        morning_dates = {d['date'] for d in morning_schedule}
+        common_dates = evening_dates & morning_dates
+        
+        logger.info(f"  Общие даты: {len(common_dates)}")
+        if common_dates:
+            for duty_date in sorted(list(common_dates))[:5]:
+                logger.info(f"    - {duty_date}")
+        
+        combined_schedule = combine_schedules(evening_schedule, morning_schedule)
+        new_hash = calculate_schedule_hash(combined_schedule)
 
-            # Логируем результат объединения
-            logger.info("📊 Результат объединения расписаний (первые 10 записей):")
-            for i, duty in enumerate(combined_schedule[:10]):
-                logger.info(f"  {i+1}: {duty['date']} - Утро: '{duty['morning']}', Вечер: '{duty['evening']}'")
-            
+        logger.info("📊 Результат объединения расписаний (первые 10 записей):")
+        for i, duty in enumerate(combined_schedule[:10]):
+            logger.info(f"  {i+1}: {duty['date']} - Утро: '{duty['morning']}', Вечер: '{duty['evening']}'")
+
+        schedule_changed = False
+        with cache_lock:
+            if data_cache['last_hash'] != new_hash:
+                data_cache['last_hash'] = new_hash
+                schedule_changed = True
+
             data_cache['schedule'] = combined_schedule
             data_cache['last_update'] = time.time()
             data_cache['error'] = None
+
+        if schedule_changed:
+            logger.info("📢 Обнаружено изменение расписания")
+            trigger_schedule_changed(combined_schedule)
+
+        logger.info(f"✅ Данные успешно обновлены. Всего записей: {len(combined_schedule)}")
             
-            logger.info(f"✅ Данные успешно обновлены. Всего записей: {len(combined_schedule)}")
-                
-        except Exception as e:
-            data_cache['error'] = f"Ошибка при обновлении данных: {e}"
-            logger.error(data_cache['error'])
+    except Exception as e:
+        error_message = f"Ошибка при обновлении данных: {e}"
+        with cache_lock:
+            data_cache['error'] = error_message
+        logger.error(error_message)
 
 def combine_schedules(evening_schedule, morning_schedule):
     """Объединение утренних и вечерних дежурств (гибкий вариант)"""
@@ -833,6 +840,14 @@ def api_health():
 def health():
     """Health check для Docker."""
     return api_health()
+
+@app.route('/version')
+def version():
+    """Информация о версии приложения."""
+    return jsonify({
+        'version': APP_VERSION,
+        'timestamp': time.time()
+    })
 
 # =============================================================================
 # МАРШРУТЫ ДЛЯ ОТОБРАЖЕНИЯ
