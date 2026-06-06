@@ -7,8 +7,6 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - FLASK_ENV=production
-      - FLASK_APP=duty_app.py
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
       - SERVER_TIMEZONE=Asia/Yekaterinburg
@@ -18,11 +16,12 @@ services:
       - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
       - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
       - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
+      - LOG_DIR=${LOG_DIR:-/app/logs}
       - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./vk_users.json:/app/vk_users.json:ro
-      - duty_logs:/var/log/duty-app
+      - duty_logs:/app/logs
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"

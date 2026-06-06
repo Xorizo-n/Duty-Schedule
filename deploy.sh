@@ -85,8 +85,6 @@ GOOGLE_SHEET_URL=$google_url
 GOOGLE_CREDENTIALS_FILE=credentials.json
 
 # Приложение
-FLASK_ENV=production
-FLASK_APP=duty_app.py
 TZ=Asia/Yekaterinburg
 SERVER_TIMEZONE=Asia/Yekaterinburg
 
@@ -99,6 +97,7 @@ VK_USERS_FILE=vk_users.json
 # Логирование
 CONSOLE_LOG_LEVEL=INFO
 FILE_LOG_LEVEL=WARNING
+LOG_DIR=/app/logs
 
 # Метаданные деплоя
 DOCKER_IMAGE=$DOCKER_IMAGE
@@ -110,14 +109,13 @@ else
 fi
 
 ensure_env_var "GOOGLE_CREDENTIALS_FILE" "credentials.json"
-ensure_env_var "FLASK_ENV" "production"
-ensure_env_var "FLASK_APP" "duty_app.py"
 ensure_env_var "TZ" "Asia/Yekaterinburg"
 ensure_env_var "SERVER_TIMEZONE" "Asia/Yekaterinburg"
 ensure_env_var "VK_API_VERSION" "5.199"
 ensure_env_var "VK_USERS_FILE" "vk_users.json"
 ensure_env_var "CONSOLE_LOG_LEVEL" "INFO"
 ensure_env_var "FILE_LOG_LEVEL" "WARNING"
+ensure_env_var "LOG_DIR" "/app/logs"
 ensure_env_var "DOCKER_IMAGE" "$DOCKER_IMAGE"
 ensure_env_var "DOCKER_TAG" "$DOCKER_TAG"
 
@@ -136,7 +134,7 @@ EOF
 fi
 
 echo -e "${YELLOW}📝 Активные настройки .env:${NC}"
-grep -E '^(GOOGLE_SHEET_URL|GOOGLE_CREDENTIALS_FILE|FLASK_ENV|FLASK_APP|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_USERS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL)=' .env
+grep -E '^(GOOGLE_SHEET_URL|GOOGLE_CREDENTIALS_FILE|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_USERS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL|LOG_DIR)=' .env
 echo ""
 
 if [ ! -f "$COMPOSE_FILE" ]; then
@@ -151,8 +149,6 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - FLASK_ENV=production
-      - FLASK_APP=duty_app.py
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
       - SERVER_TIMEZONE=Asia/Yekaterinburg
@@ -162,11 +158,12 @@ services:
       - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
       - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
       - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
+      - LOG_DIR=${LOG_DIR:-/app/logs}
       - TZ=Asia/Yekaterinburg
     volumes:
       - ./credentials.json:/app/credentials.json:ro
       - ./vk_users.json:/app/vk_users.json:ro
-      - duty_logs:/var/log/duty-app
+      - duty_logs:/app/logs
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"
