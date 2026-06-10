@@ -10,7 +10,18 @@ class DutyScheduleApp {
         this.serverTimeCapturedAt = null;
         this.dataUpdateInterval = null;
         this.timeUpdateInterval = null;
+        this.backgroundSwitchInterval = null;
         this.isFetching = false;
+
+        this.backgroundLayers = Array.from(document.querySelectorAll(".background-scene"));
+        this.backgroundPresets = [
+            "pattern-orbs",
+            "pattern-angled",
+            "pattern-octagons",
+            "pattern-mosaic",
+        ];
+        this.activeBackgroundPresetIndex = 0;
+        this.visibleBackgroundLayerIndex = 0;
 
         this.init();
     }
@@ -20,11 +31,63 @@ class DutyScheduleApp {
         this.dataUpdateInterval = setInterval(() => this.fetchData(), 30000);
         this.updateLocalTime();
         this.timeUpdateInterval = setInterval(() => this.updateLocalTime(), 1000);
+        this.initBackgroundAnimation();
+
         document.body.style.opacity = "0";
         document.body.style.transition = "opacity 0.5s ease-in-out";
         setTimeout(() => {
             document.body.style.opacity = "1";
         }, 100);
+    }
+
+    initBackgroundAnimation() {
+        if (this.backgroundLayers.length === 0 || this.backgroundPresets.length === 0) {
+            return;
+        }
+
+        this.applyBackgroundPreset(
+            this.backgroundLayers[this.visibleBackgroundLayerIndex],
+            this.backgroundPresets[this.activeBackgroundPresetIndex]
+        );
+        this.backgroundLayers[this.visibleBackgroundLayerIndex].classList.add("is-active");
+
+        if (this.backgroundLayers.length > 1) {
+            const preloadLayerIndex = 1 - this.visibleBackgroundLayerIndex;
+            const preloadPresetIndex =
+                (this.activeBackgroundPresetIndex + 1) % this.backgroundPresets.length;
+            this.applyBackgroundPreset(
+                this.backgroundLayers[preloadLayerIndex],
+                this.backgroundPresets[preloadPresetIndex]
+            );
+        }
+
+        this.backgroundSwitchInterval = setInterval(() => this.rotateBackgroundPreset(), 120000);
+    }
+
+    applyBackgroundPreset(layer, presetClass) {
+        layer.className = "background-scene";
+        layer.classList.add(presetClass);
+    }
+
+    rotateBackgroundPreset() {
+        if (this.backgroundLayers.length < 2 || this.backgroundPresets.length < 2) {
+            return;
+        }
+
+        const currentLayer = this.backgroundLayers[this.visibleBackgroundLayerIndex];
+        const nextLayerIndex = 1 - this.visibleBackgroundLayerIndex;
+        const nextLayer = this.backgroundLayers[nextLayerIndex];
+
+        this.activeBackgroundPresetIndex =
+            (this.activeBackgroundPresetIndex + 1) % this.backgroundPresets.length;
+        this.applyBackgroundPreset(
+            nextLayer,
+            this.backgroundPresets[this.activeBackgroundPresetIndex]
+        );
+
+        nextLayer.classList.add("is-active");
+        currentLayer.classList.remove("is-active");
+        this.visibleBackgroundLayerIndex = nextLayerIndex;
     }
 
     async fetchData() {
@@ -250,6 +313,9 @@ class DutyScheduleApp {
         }
         if (this.dataUpdateInterval) {
             clearInterval(this.dataUpdateInterval);
+        }
+        if (this.backgroundSwitchInterval) {
+            clearInterval(this.backgroundSwitchInterval);
         }
     }
 }

@@ -1,12 +1,18 @@
-/* Анимированный фон */
+:root {
+    --bg-primary: #132661;
+    --bg-secondary: #3d4aa6;
+    --bg-accent: #4389fa;
+}
+
 body {
     margin: 0;
     padding: 0;
-    font-family: 'Arial', sans-serif;
+    font-family: Arial, sans-serif;
     height: 100vh;
     overflow: hidden;
     position: relative;
     cursor: none;
+    background: radial-gradient(circle at 50% 50%, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-accent) 100%);
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
@@ -15,54 +21,193 @@ body {
 
 .background-animation {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(
-        circle at 50% 50%,
-        rgba(19, 38, 97, 1) 0%,
-        rgba(61, 74, 166, 1) 50%,
-        rgba(67, 137, 250, 1) 100%
-    );
-    background-size: 200% 200%;
-    animation: gradientShift 20s ease infinite;
-    z-index: -1;
+    inset: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.08), transparent 28%),
+        radial-gradient(circle at 80% 15%, rgba(163, 213, 255, 0.1), transparent 24%),
+        radial-gradient(circle at 50% 50%, var(--bg-primary) 0%, var(--bg-secondary) 48%, var(--bg-accent) 100%);
+    background-size: 180% 180%;
+    animation: gradientShift 28s ease-in-out infinite alternate;
+    z-index: -2;
+}
+
+.background-animation::before,
+.background-animation::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.background-animation::before {
+    background:
+        radial-gradient(circle at top left, rgba(255, 255, 255, 0.12), transparent 34%),
+        radial-gradient(circle at bottom right, rgba(17, 37, 94, 0.18), transparent 38%);
+    mix-blend-mode: screen;
+    opacity: 0.55;
+}
+
+.background-animation::after {
+    background: linear-gradient(135deg, rgba(7, 16, 44, 0.08), rgba(255, 255, 255, 0.03) 45%, rgba(7, 16, 44, 0.18));
+}
+
+.background-scene {
+    position: absolute;
+    inset: -12%;
+    opacity: 0;
+    transition: opacity 4s ease-in-out, transform 4s ease-in-out;
+    transform: scale(1.03);
+    filter: saturate(1.05);
+    will-change: opacity, transform, background-position;
+}
+
+.background-scene.is-active {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.pattern-orbs {
+    background:
+        radial-gradient(circle at 12% 38%, rgba(255, 255, 255, 0.2) 0 6%, transparent 7%),
+        radial-gradient(circle at 18% 28%, rgba(255, 255, 255, 0.14) 0 12%, transparent 13%),
+        radial-gradient(circle at 24% 18%, rgba(255, 255, 255, 0.1) 0 18%, transparent 19%),
+        radial-gradient(circle at 78% 72%, rgba(120, 181, 255, 0.12) 0 10%, transparent 11%),
+        radial-gradient(circle at 72% 68%, rgba(120, 181, 255, 0.08) 0 18%, transparent 19%);
+    animation: orbsFloat 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+
+.pattern-angled {
+    background:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 10px, transparent 10px 54px) 0 0 / 140px 486px,
+        conic-gradient(from -150deg at 14px 50%, rgba(145, 204, 255, 0.18) 120deg, transparent 0) 0 120px / 140px 486px,
+        linear-gradient(-120deg, transparent 0 28%, rgba(255, 255, 255, 0.08) 28% 31%, transparent 31%) 0 0 / 140px 486px,
+        linear-gradient(-60deg, transparent 0 28%, rgba(67, 137, 250, 0.12) 28% 31%, transparent 31%) 0 0 / 140px 486px;
+    animation: angledPan 2.8s linear infinite;
+}
+
+.pattern-octagons {
+    background:
+        conic-gradient(from -45deg at 22% 22%, transparent 0 74deg, rgba(255, 255, 255, 0.08) 74deg 92deg, transparent 92deg 360deg) 0 0 / 180px 180px,
+        conic-gradient(from 45deg at 78% 22%, transparent 0 74deg, rgba(163, 213, 255, 0.12) 74deg 92deg, transparent 92deg 360deg) 0 0 / 180px 180px,
+        conic-gradient(from 135deg at 78% 78%, transparent 0 74deg, rgba(255, 255, 255, 0.07) 74deg 92deg, transparent 92deg 360deg) 0 0 / 180px 180px,
+        conic-gradient(from -135deg at 22% 78%, transparent 0 74deg, rgba(67, 137, 250, 0.12) 74deg 92deg, transparent 92deg 360deg) 0 0 / 180px 180px;
+    animation: octagonPulse 2.8s infinite alternate linear;
+}
+
+.pattern-mosaic {
+    background-color: transparent;
+    background-image:
+        radial-gradient(transparent 0.7em, rgba(19, 38, 97, 0.22) 0.72em),
+        conic-gradient(at 1em 1em, transparent 270deg, rgba(255, 255, 255, 0.08) 270deg),
+        conic-gradient(at 1em 1em, transparent 270deg, rgba(67, 137, 250, 0.12) 270deg),
+        conic-gradient(at 1em 1em, transparent 270deg, rgba(61, 74, 166, 0.14) 270deg),
+        conic-gradient(at 1em 1em, transparent 270deg, rgba(163, 213, 255, 0.1) 270deg);
+    background-size: 1.2em 1.2em, 4.8em 4.8em, 4.8em 4.8em, 4.8em 4.8em, 4.8em 4.8em;
+    animation: mosaicShiftX 13.5s ease-in-out infinite, mosaicShiftY 13.5s -4.2s ease-in-out infinite;
 }
 
 @keyframes gradientShift {
     0% {
         background-position: 0% 50%;
-        background-size: 200% 200%;
+        background-size: 180% 180%;
     }
     25% {
         background-position: 50% 100%;
-        background-size: 180% 180%;
+        background-size: 170% 170%;
     }
     50% {
         background-position: 100% 50%;
-        background-size: 200% 200%;
+        background-size: 185% 185%;
     }
     75% {
         background-position: 50% 0%;
-        background-size: 180% 180%;
+        background-size: 170% 170%;
     }
     100% {
         background-position: 0% 50%;
-        background-size: 200% 200%;
+        background-size: 180% 180%;
     }
 }
 
-/* Эффект стекла */
+@keyframes orbsFloat {
+    0% {
+        transform: translate3d(-1.5%, -1%, 0) scale(1.02);
+    }
+    50% {
+        transform: translate3d(1.5%, 1%, 0) scale(1.06);
+    }
+    100% {
+        transform: translate3d(0.5%, -0.5%, 0) scale(1.03);
+    }
+}
+
+@keyframes angledPan {
+    0% {
+        background-position: 0 0, 0 120px, 0 0, 0 0;
+    }
+    100% {
+        background-position: -140px 0, -140px 120px, -140px 0, -140px 0;
+    }
+}
+
+@keyframes octagonPulse {
+    0% {
+        background-size: 180px 180px, 180px 180px, 180px 180px, 180px 180px;
+        background-position: 0 0, 0 0, 0 0, 0 0;
+        transform: scale(1.02) rotate(0deg);
+    }
+    50% {
+        background-size: 196px 196px, 196px 196px, 196px 196px, 196px 196px;
+        background-position: 24px 18px, 24px 18px, 24px 18px, 24px 18px;
+        transform: scale(1.05) rotate(1deg);
+    }
+    100% {
+        background-size: 188px 188px, 188px 188px, 188px 188px, 188px 188px;
+        background-position: 14px 28px, 14px 28px, 14px 28px, 14px 28px;
+        transform: scale(1.03) rotate(-1deg);
+    }
+}
+
+@keyframes mosaicShiftX {
+    0%, 100% {
+        background-position-x: 0, 0, 1.2em, 2.4em, 3.6em;
+    }
+    25% {
+        background-position-x: 0, 1.2em, 0, 3.6em, 2.4em;
+    }
+    50% {
+        background-position-x: 0, -1.2em, -2.4em, 4.8em, 3.6em;
+    }
+    75% {
+        background-position-x: 0, -2.4em, -1.2em, 3.6em, 4.8em;
+    }
+}
+
+@keyframes mosaicShiftY {
+    0%, 100% {
+        background-position-y: 0, 0, 1.2em, 2.4em, 3.6em;
+    }
+    25% {
+        background-position-y: 0, 1.2em, 0, 3.6em, 2.4em;
+    }
+    50% {
+        background-position-y: 0, -1.2em, -2.4em, 4.8em, 3.6em;
+    }
+    75% {
+        background-position-y: 0, -2.4em, -1.2em, 3.6em, 4.8em;
+    }
+}
+
 .glass-effect {
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 
-        0 8px 32px rgba(0, 0, 0, 0.1),
-        inset 0 1px 0 rgba(255, 255, 255, 0.2),
-        inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 
 .container-tv {
@@ -88,13 +233,12 @@ body {
     flex-shrink: 0;
 }
 
-/* Стили для сегодняшних дежурных */
 .today-duty {
     font-size: 2.5em;
     font-weight: bold;
     color: white;
     margin: 15px 0;
-    text-shadow: 
+    text-shadow:
         0 2px 10px rgba(0, 0, 0, 0.3),
         0 4px 20px rgba(0, 0, 0, 0.2);
     letter-spacing: 0.5px;
@@ -167,7 +311,7 @@ body {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 110px;
+    min-height: 118px;
     transition: all 0.3s ease;
 }
 
@@ -175,11 +319,7 @@ body {
     border-right: none;
 }
 
-.day-cell.saturday {
-    background: rgba(231, 76, 60, 0.15);
-    border-radius: 10px;
-}
-
+.day-cell.saturday,
 .day-cell.sunday {
     background: rgba(231, 76, 60, 0.15);
     border-radius: 10px;
@@ -193,7 +333,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px; /* Расстояние между днем недели и числом */
+    gap: 6px;
 }
 
 .weekday {
@@ -204,29 +344,16 @@ body {
     transition: color 0.3s ease;
 }
 
-.weekday.saturday {
-    color: rgba(255, 230, 230, 0.95);
-    text-shadow: 0 1px 3px rgba(231, 76, 60, 0.4);
-}
-
-.weekday.sunday {
-    color: rgba(255, 230, 230, 0.95);
-    text-shadow: 0 1px 3px rgba(231, 76, 60, 0.4);
-}
-
-.day-cell.saturday .date-header {
-    color: rgba(255, 230, 230, 0.95);
-    text-shadow: 0 1px 3px rgba(231, 76, 60, 0.4);
-}
-
+.weekday.saturday,
+.weekday.sunday,
+.day-cell.saturday .date-header,
 .day-cell.sunday .date-header {
     color: rgba(255, 230, 230, 0.95);
     text-shadow: 0 1px 3px rgba(231, 76, 60, 0.4);
 }
 
-/* Стили для дежурных в расписании */
 .duty-name {
-    font-size: 1.1em;
+    font-size: 1.25em;
     color: white;
     margin-top: auto;
     font-weight: 500;
@@ -239,25 +366,21 @@ body {
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
-/* Стили для будней (две строки) */
-.morning-line {
-    font-size: 0.85em;
-    margin-bottom: 3px;
-    color: rgba(255, 255, 255, 0.9);
-}
-
+.morning-line,
 .evening-line {
-    font-size: 0.85em;
+    font-size: 0.98em;
     color: rgba(255, 255, 255, 0.9);
 }
 
-/* Стили для субботы и воскресенья (как раньше) */
+.morning-line {
+    margin-bottom: 3px;
+}
+
 .day-cell.saturday .duty-name,
 .day-cell.sunday .duty-name {
-    font-size: 1em;
+    font-size: 1.12em;
     color: white;
     font-weight: 600;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     display: block;
     padding: 5px 0;
 }
@@ -283,32 +406,23 @@ body {
     border: 2px solid rgba(255, 255, 255, 0.4);
     border-radius: 10px;
     transform: scale(1);
-    box-shadow: 
+    box-shadow:
         0 8px 25px rgba(255, 255, 255, 0.2),
         inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.today-highlight .date-header {
-    color: white;
-    text-shadow: 0 2px 8px rgba(255, 255, 255, 0.4);
-}
-
+.today-highlight .date-header,
 .today-highlight .weekday {
     color: white;
     text-shadow: 0 2px 8px rgba(255, 255, 255, 0.4);
 }
 
-.today-highlight .duty-name {
-    font-weight: 600;
-    text-shadow: 0 2px 8px rgba(255, 255, 255, 0.3);
-}
-
+.today-highlight .duty-name,
 .today-highlight .morning-line,
 .today-highlight .evening-line {
     font-weight: 600;
 }
 
-/* Стили для сообщений об ошибках */
 .error-container {
     margin: 15px 0;
 }
@@ -357,7 +471,6 @@ body {
     transition: transform 0.3s ease;
 }
 
-/* Стили для скроллбара */
 .schedule-section::-webkit-scrollbar {
     width: 6px;
 }
@@ -376,48 +489,34 @@ body {
     background: rgba(255, 255, 255, 0.4);
 }
 
-/* Адаптивность для ТВ */
 @media (max-width: 768px) {
     .today-duty {
         font-size: 2em;
     }
-    
+
     .duty-line {
         font-size: 0.95em;
     }
-    
+
     .today-date {
         font-size: 1.4em;
     }
-    
+
     .day-cell {
         min-height: 95px;
         padding: 10px 5px;
     }
-    
+
     .duty-name {
-        font-size: 0.85em;
+        font-size: 0.98em;
     }
-    
+
     .morning-line,
     .evening-line {
-        font-size: 0.8em;
+        font-size: 0.9em;
     }
 }
 
-/* Скрываем outline для фокуса */
 *:focus {
     outline: none;
 }
-
-/* Удаляем старые стили, которые больше не нужны */
-/*
-УДАЛЕНО:
-.duty-names { ... }
-.morning-duty { ... }
-.evening-duty { ... }
-.today-duty .morning-duty, .today-duty .evening-duty { ... }
-.day-cell.saturday .morning-duty, .day-cell.sunday .morning-duty { ... }
-.today-highlight .morning-duty { ... }
-.today-highlight .evening-duty { ... }
-*/

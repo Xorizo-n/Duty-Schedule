@@ -11,7 +11,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
 </head>
 <body>
-    <div class="background-animation"></div>
+    <div class="background-animation" aria-hidden="true">
+        <div class="background-scene"></div>
+        <div class="background-scene"></div>
+    </div>
+
     <div class="container-tv">
         <div class="today-section glass-effect">
             <div class="today-date">
