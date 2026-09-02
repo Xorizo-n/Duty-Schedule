@@ -23,7 +23,7 @@ def make_config(project_root: Path) -> AppConfig:
         log_dir=str(project_root / "logs"),
         google_update_interval=60,
         ntp_update_interval=60,
-        app_version="2.2.1",
+        app_version="2.2.2",
     )
 
 

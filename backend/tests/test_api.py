@@ -29,7 +29,7 @@ class FakeScheduleService:
 class ApiBlueprintTestCase(unittest.TestCase):
     def setUp(self) -> None:
         app = Flask(__name__)
-        app.config["APP_VERSION"] = "2.2.1"
+        app.config["APP_VERSION"] = "2.2.2"
         app.extensions["schedule_service"] = FakeScheduleService()
         app.register_blueprint(api_bp)
         self.client = app.test_client()
@@ -48,7 +48,7 @@ class ApiBlueprintTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
         payload = response.get_json()
-        self.assertEqual(payload["version"], "2.2.1")
+        self.assertEqual(payload["version"], "2.2.2")
         self.assertIn("timestamp", payload)
 
 

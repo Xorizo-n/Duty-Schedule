@@ -70,5 +70,5 @@ def load_config() -> AppConfig:
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
         google_update_interval=int(os.getenv("GOOGLE_UPDATE_INTERVAL", "60")),
         ntp_update_interval=int(os.getenv("NTP_UPDATE_INTERVAL", "60")),
-        app_version="2.2.1",
+        app_version="2.2.2",
     )
