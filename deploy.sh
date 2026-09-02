@@ -49,7 +49,7 @@ if [ ! -f "credentials.json" ]; then
     echo ""
     echo -e "${YELLOW}💡 Важно:${NC}"
     echo "- Предоставьте доступ к таблице для email сервисного аккаунта"
-    echo "- Листы в таблице: 'Вечернее дежурство' и 'Дежурство по утрам'"
+    echo "- Лист с графиком задается через DUTY_SHEET_GID (по умолчанию 1262048925)"
     exit 1
 fi
 
@@ -83,6 +83,8 @@ if [ ! -f ".env" ]; then
 # Конфигурация Google Sheets
 GOOGLE_SHEET_URL=$google_url
 GOOGLE_CREDENTIALS_FILE=credentials.json
+DUTY_SHEET_GID=1262048925
+DUTY_SHEET_NAME=Новое Дежуство
 
 # Приложение
 TZ=Asia/Yekaterinburg
@@ -109,6 +111,8 @@ else
 fi
 
 ensure_env_var "GOOGLE_CREDENTIALS_FILE" "credentials.json"
+ensure_env_var "DUTY_SHEET_GID" "1262048925"
+ensure_env_var "DUTY_SHEET_NAME" "Новое Дежуство"
 ensure_env_var "TZ" "Asia/Yekaterinburg"
 ensure_env_var "SERVER_TIMEZONE" "Asia/Yekaterinburg"
 ensure_env_var "VK_API_VERSION" "5.199"
@@ -315,4 +319,4 @@ fi
 echo ""
 echo -e "${RED}⚠️ Важно:${NC}"
 echo "   Не удаляйте: credentials.json, .env, vk_users.json"
-echo "   Листы в таблице: 'Вечернее дежурство' и 'Дежурство по утрам'"
+echo "   Лист с графиком: 'Новое Дежуство' (gid 1262048925), см. DUTY_SHEET_GID"

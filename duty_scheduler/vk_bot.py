@@ -4,6 +4,7 @@ from datetime import date, timedelta
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from urllib.parse import urlencode
@@ -11,6 +12,10 @@ from urllib.request import urlopen
 
 from .config import AppConfig
 from .schedule_service import ScheduleService
+
+
+# Отчество завершает ФИО: по нему режем ячейку с несколькими дежурными.
+PATRONYMIC_PATTERN = re.compile(r"(?:ович|евич|ьевич|овна|евна|ична|инична)$", re.IGNORECASE)
 
 
 class VkNotifier:
@@ -58,6 +63,31 @@ class VkNotifier:
             self.logger.error(f"Не удалось загрузить соответствия VK из {mapping_path}: {exc}")
             return {}
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return re.sub(r"\s+", " ", str(name)).strip().casefold()
+
+    @classmethod
+    def _short_name(cls, name: str) -> str:
+        # "Козлов Данила Дмитриевич" -> "козлов данила": в vk_users.json ключи без отчества.
+        return " ".join(cls._normalize_name(name).split()[:2])
+
+    @classmethod
+    def build_user_lookup(cls, user_mapping: dict) -> dict:
+        lookup: dict[str, object] = {}
+        for key, value in user_mapping.items():
+            for candidate in (cls._normalize_name(key), cls._short_name(key)):
+                if candidate:
+                    lookup.setdefault(candidate, value)
+        return lookup
+
+    def find_user_info(self, duty_name: str, user_mapping: dict):
+        lookup = self.build_user_lookup(user_mapping)
+        for candidate in (self._normalize_name(duty_name), self._short_name(duty_name)):
+            if candidate in lookup:
+                return lookup[candidate]
+        return None
+
     def get_vk_mention(self, duty_name: str, user_mapping: dict | None = None) -> str:
         duty_name = self.schedule_service.clean_name(duty_name)
         if not duty_name:
@@ -66,7 +96,7 @@ class VkNotifier:
         if user_mapping is None:
             user_mapping = self.load_vk_user_mapping()
 
-        user_info = user_mapping.get(duty_name)
+        user_info = self.find_user_info(duty_name, user_mapping)
         if user_info is None:
             self.logger.warning(f"Для '{duty_name}' не найден VK id, используем обычное имя")
             return duty_name
@@ -96,6 +126,18 @@ class VkNotifier:
             return [part.strip() for part in normalized_name.split(",") if part.strip()]
 
         words = normalized_name.split()
+
+        # ФИО с отчествами: "Иванов Иван Иванович Петров Петр Петрович" -> двое.
+        groups: list[str] = []
+        current: list[str] = []
+        for word in words:
+            current.append(word)
+            if len(current) >= 2 and PATRONYMIC_PATTERN.search(word):
+                groups.append(" ".join(current))
+                current = []
+        if groups and not current:
+            return groups
+
         if len(words) > 2 and len(words) % 2 == 0:
             return [" ".join(words[index:index + 2]) for index in range(0, len(words), 2)]
 

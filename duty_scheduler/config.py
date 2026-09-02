@@ -13,6 +13,8 @@ class AppConfig:
     base_dir: Path
     google_sheet_url: str
     credentials_file: str
+    duty_sheet_gid: int | None
+    duty_sheet_name: str
     server_timezone: str
     vk_bot_token: str | None
     vk_peer_id: str | None
@@ -26,6 +28,23 @@ class AppConfig:
     app_version: str
 
 
+DEFAULT_DUTY_SHEET_GID = 1262048925
+DEFAULT_DUTY_SHEET_NAME = "Новое Дежуство"
+
+
+def _load_duty_sheet_gid() -> int | None:
+    raw_gid = os.getenv("DUTY_SHEET_GID")
+    if raw_gid is None:
+        return DEFAULT_DUTY_SHEET_GID
+    raw_gid = raw_gid.strip()
+    if not raw_gid:
+        return None
+    try:
+        return int(raw_gid)
+    except ValueError:
+        raise ValueError(f"DUTY_SHEET_GID должен быть числом, получено: {raw_gid!r}")
+
+
 def load_config() -> AppConfig:
     base_dir = Path(__file__).resolve().parent.parent
     google_sheet_url = os.getenv("GOOGLE_SHEET_URL")
@@ -36,6 +55,8 @@ def load_config() -> AppConfig:
         base_dir=base_dir,
         google_sheet_url=google_sheet_url,
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
+        duty_sheet_gid=_load_duty_sheet_gid(),
+        duty_sheet_name=os.getenv("DUTY_SHEET_NAME", DEFAULT_DUTY_SHEET_NAME),
         server_timezone=os.getenv("SERVER_TIMEZONE", "Asia/Yekaterinburg"),
         vk_bot_token=os.getenv("VK_BOT_TOKEN"),
         vk_peer_id=os.getenv("VK_PEER_ID"),
@@ -46,5 +67,5 @@ def load_config() -> AppConfig:
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
         google_update_interval=int(os.getenv("GOOGLE_UPDATE_INTERVAL", "60")),
         ntp_update_interval=int(os.getenv("NTP_UPDATE_INTERVAL", "60")),
-        app_version="2.1.0",
+        app_version="2.2.0",
     )
