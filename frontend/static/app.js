@@ -240,12 +240,7 @@ class DutyScheduleApp {
 
                 html += `
                     <div class="${dayClasses}">
-                        <div class="date-header">
-                            <span class="weekday ${duty.weekday === "СБ" ? "saturday" : duty.weekday === "ВС" ? "sunday" : ""}">
-                                ${duty.weekday}
-                            </span>
-                            ${duty.date_str}
-                        </div>
+                        <div class="date-header"><span class="weekday ${duty.weekday === "СБ" ? "saturday" : duty.weekday === "ВС" ? "sunday" : ""}">${duty.weekday}</span><span class="date-value">${duty.date_str}</span></div>
                         <div class="duty-name">
                 `;
 
