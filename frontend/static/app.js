@@ -240,23 +240,18 @@ class DutyScheduleApp {
 
                 html += `
                     <div class="${dayClasses}">
-                        <div class="date-header">
-                            <span class="weekday ${duty.weekday === "СБ" ? "saturday" : duty.weekday === "ВС" ? "sunday" : ""}">
-                                ${duty.weekday}
-                            </span>
-                            ${duty.date_str}
-                        </div>
+                        <div class="date-header"><span class="weekday ${duty.weekday === "СБ" ? "saturday" : duty.weekday === "ВС" ? "sunday" : ""}">${duty.weekday}</span><span class="date-value">${duty.date_str}</span></div>
                         <div class="duty-name">
                 `;
 
                 if (isWeekend) {
-                    html += duty.evening || '<div class="no-duty-cell">—</div>';
+                    html += this.formatDutyPersons(duty.evening) || '<div class="no-duty-cell">—</div>';
                 } else {
                     if (duty.morning) {
-                        html += `<div class="morning-line">Утро: ${duty.morning}</div>`;
+                        html += `<div class="morning-line">Утро: ${this.formatDutyPersons(duty.morning)}</div>`;
                     }
                     if (duty.evening) {
-                        html += `<div class="evening-line">Вечер: ${duty.evening}</div>`;
+                        html += `<div class="evening-line">Вечер: ${this.formatDutyPersons(duty.evening)}</div>`;
                     }
                     if (!duty.morning && !duty.evening) {
                         html += '<div class="no-duty-cell">—</div>';
@@ -273,6 +268,15 @@ class DutyScheduleApp {
         });
 
         this.scheduleContainer.innerHTML = html;
+    }
+
+    formatDutyPersons(value) {
+        // В ячейке бывает несколько дежурных (суббота) — каждый со своей строки.
+        return (value || "")
+            .split(",")
+            .map((name) => name.trim())
+            .filter(Boolean)
+            .join("<br>");
     }
 
     updateLocalTime() {

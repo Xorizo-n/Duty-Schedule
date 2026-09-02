@@ -2,9 +2,9 @@ import threading
 
 from flask import Flask
 
-from .backend import backend_bp
+from .api import api_bp
 from .config import AppConfig, load_config
-from .frontend import frontend_bp
+from .views import views_bp
 from .logging_utils import setup_logging
 from .schedule_service import ScheduleService
 from .vk_bot import VkNotifier
@@ -20,8 +20,8 @@ def create_app() -> Flask:
 
     app = Flask(
         __name__,
-        template_folder=str(config.base_dir / "templates"),
-        static_folder=str(config.base_dir / "static"),
+        template_folder=str(config.frontend_dir / "templates"),
+        static_folder=str(config.frontend_dir / "static"),
     )
     app.config["APP_VERSION"] = config.app_version
 
@@ -33,8 +33,8 @@ def create_app() -> Flask:
     app.extensions["schedule_service"] = schedule_service
     app.extensions["vk_notifier"] = vk_notifier
 
-    app.register_blueprint(backend_bp)
-    app.register_blueprint(frontend_bp)
+    app.register_blueprint(api_bp)
+    app.register_blueprint(views_bp)
     return app
 
 

@@ -15,6 +15,12 @@ import pytz
 from .config import AppConfig
 
 
+SATURDAY = 5
+
+# Отчество: последнее слово ФИО. Используется и здесь, и в vk_bot.
+PATRONYMIC_PATTERN = re.compile(r"(?:ович|евич|ьевич|овна|евна|ична|инична)$", re.IGNORECASE)
+
+
 class ScheduleService:
     def __init__(self, config: AppConfig, logger: logging.Logger) -> None:
         self.config = config
@@ -112,11 +118,10 @@ class ScheduleService:
 
     def get_google_sheets_client(self):
         try:
-            scope = [
-                "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/drive",
-            ]
-            credentials_path = self.config.base_dir / self.config.credentials_file
+            # Минимально необходимый доступ: только чтение таблиц.
+            # Полный scope drive дал бы сервисному аккаунту запись во весь Drive.
+            scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+            credentials_path = self.config.project_root / self.config.credentials_file
             if not credentials_path.exists():
                 self.logger.error(f"Файл учетных данных не найден: {credentials_path}")
                 return None
@@ -133,9 +138,17 @@ class ScheduleService:
             return ""
 
         name = re.sub(r"\([^)]*\)", "", name)
-        name = re.sub(r"с \d+:\d+", "", name)
-        name = name.replace("<br>", ", ").strip()
-        name = re.sub(r"\s+", " ", name)
+        # Диапазон времени целиком: "с 8:00 до 16:00", "с 8:00-16:00", "с 17:00".
+        name = re.sub(
+            r"с\s*\d{1,2}:\d{2}(\s*(?:до|-|–|—)\s*\d{1,2}:\d{2})?",
+            "",
+            name,
+            flags=re.IGNORECASE,
+        )
+        name = name.replace("<br>", ", ")
+        name = re.sub(r"[\r\n]+", ", ", name)
+        name = re.sub(r"\s+", " ", name).strip()
+        name = re.sub(r"\s*,\s*", ", ", name)
         return name.strip(" ,")
 
     @staticmethod
@@ -149,17 +162,57 @@ class ScheduleService:
         return bool(re.match(date_pattern_full, cell_value) or re.match(date_pattern_short, cell_value))
 
     @staticmethod
-    def parse_date_cell(date_str: str) -> date | None:
-        try:
-            date_str = str(date_str).strip()
-            if re.match(r"^\d{1,2}\.\d{1,2}\.\d{4}$", date_str):
+    def parse_date_cell(date_str: str, reference_date: date | None = None) -> date | None:
+        date_str = str(date_str).strip()
+
+        if re.match(r"^\d{1,2}\.\d{1,2}\.\d{4}$", date_str):
+            try:
                 return datetime.strptime(date_str, "%d.%m.%Y").date()
-            if re.match(r"^\d{1,2}\.\d{1,2}$", date_str):
-                current_year = datetime.now().year
-                return datetime.strptime(f"{date_str}.{current_year}", "%d.%m.%Y").date()
+            except ValueError:
+                return None
+
+        if not re.match(r"^\d{1,2}\.\d{1,2}$", date_str):
             return None
-        except ValueError:
+
+        # Год в таблице не указан: выбираем тот, при котором дата ближе всего
+        # к текущей. Иначе неделя на стыке декабря и января разъезжается на год.
+        reference = reference_date or date.today()
+        day, month = (int(part) for part in date_str.split("."))
+        candidates = []
+        for year in (reference.year - 1, reference.year, reference.year + 1):
+            try:
+                candidates.append(date(year, month, day))
+            except ValueError:
+                continue
+
+        if not candidates:
             return None
+        return min(candidates, key=lambda candidate: abs((candidate - reference).days))
+
+    @staticmethod
+    def shorten_name(name: str) -> str:
+        """Убирает отчества: на табло достаточно фамилии и имени.
+
+        Отсекается только слово, похожее на отчество, и только начиная с
+        третьего — иначе фамилия вида «Иванович» потерялась бы вместе с ним.
+        """
+        if not name:
+            return ""
+
+        chunks = []
+        for chunk in name.split(","):
+            words = chunk.split()
+            if len(words) >= 3:
+                words = [
+                    word
+                    for index, word in enumerate(words)
+                    if index < 2 or not PATRONYMIC_PATTERN.search(word)
+                ]
+            shortened = " ".join(words)
+            if shortened:
+                chunks.append(shortened)
+
+        return ", ".join(chunks)
 
     @staticmethod
     def get_weekday_name(date_obj: date) -> str:
@@ -174,61 +227,90 @@ class ScheduleService:
         }
         return weekdays[date_obj.weekday()]
 
-    def parse_schedule_data(self, worksheet, duty_type: str) -> list[dict] | None:
-        try:
-            all_values = worksheet.get_all_values()
-            schedule = []
+    @staticmethod
+    def _cell(row: list[str] | None, col_idx: int) -> str:
+        if row is None or col_idx >= len(row):
+            return ""
+        return row[col_idx]
 
-            for row_idx, row in enumerate(all_values):
-                for col_idx, cell_value in enumerate(row):
-                    if not self.is_date_cell(cell_value):
-                        continue
-
-                    date_value = self.parse_date_cell(cell_value)
-                    if not date_value:
-                        continue
-
-                    duty_name = ""
-                    if row_idx + 1 < len(all_values):
-                        duty_cell = all_values[row_idx + 1][col_idx]
-                        duty_name = self.clean_name(duty_cell)
-
-                    record = {
-                        "date": date_value,
-                        "evening": duty_name if duty_type == "evening" else "",
-                        "morning": duty_name if duty_type == "morning" else "",
-                        "date_str": cell_value.strip(),
-                        "cell_location": f"{chr(65 + col_idx)}{row_idx + 1}",
-                        "weekday": self.get_weekday_name(date_value),
-                    }
-                    schedule.append(record)
-
-            self.logger.info(f"Найдено записей в листе '{worksheet.title}': {len(schedule)}")
-            return schedule
-        except Exception as exc:
-            self.logger.error(f"Ошибка при парсинге листа '{worksheet.title}': {exc}")
+    @classmethod
+    def _duty_row(cls, all_values: list[list[str]], row_idx: int, date_rows: set[int]) -> list[str] | None:
+        # Строка дежурных существует, только если она не является следующей строкой дат.
+        if row_idx >= len(all_values) or row_idx in date_rows:
             return None
+        return all_values[row_idx]
 
-    def combine_schedules(self, evening_schedule: list[dict], morning_schedule: list[dict]) -> list[dict]:
-        evening_dict = {duty["date"]: duty for duty in evening_schedule if isinstance(duty["date"], date)}
-        morning_dict = {duty["date"]: duty for duty in morning_schedule if isinstance(duty["date"], date)}
-        combined_schedule = []
+    def parse_duty_sheet(self, worksheet) -> list[dict]:
+        """Разбирает лист блочной структуры: строка дат, под ней 'утро' и 'вечер'.
 
-        for date_key in sorted(set(evening_dict) | set(morning_dict)):
-            evening_duty = evening_dict.get(date_key)
-            morning_duty = morning_dict.get(date_key)
-            combined_schedule.append(
-                {
-                    "date": date_key,
-                    "evening": (evening_duty or {}).get("evening", ""),
-                    "morning": (morning_duty or {}).get("morning", ""),
-                    "date_str": (evening_duty or morning_duty or {}).get("date_str", date_key.strftime("%d.%m.%Y")),
-                    "weekday": (evening_duty or morning_duty or {}).get("weekday", self.get_weekday_name(date_key)),
-                }
-            )
+        Колонки со временем и справочные колонки отсеиваются сами собой: в строке
+        дат у них пусто, поэтому такая колонка просто не попадает в разбор.
+        """
+        all_values = worksheet.get_all_values()
+        reference_date = self.get_current_datetime().date()
 
-        self.logger.info(f"Гибкое объединение: {len(combined_schedule)} записей")
-        return combined_schedule
+        date_row_indexes = [
+            row_idx
+            for row_idx, row in enumerate(all_values)
+            if any(self.is_date_cell(cell) for cell in row)
+        ]
+        date_rows = set(date_row_indexes)
+
+        schedule: dict[date, dict] = {}
+        for row_idx in date_row_indexes:
+            morning_row = self._duty_row(all_values, row_idx + 1, date_rows)
+            evening_row = self._duty_row(all_values, row_idx + 2, date_rows)
+
+            for col_idx, cell_value in enumerate(all_values[row_idx]):
+                if not self.is_date_cell(cell_value):
+                    continue
+
+                date_value = self.parse_date_cell(cell_value, reference_date)
+                if not date_value:
+                    continue
+
+                morning = self.clean_name(self._cell(morning_row, col_idx))
+                evening = self.clean_name(self._cell(evening_row, col_idx))
+
+                if date_value.weekday() >= SATURDAY:
+                    # По субботам смена одна (с 8:00 до 16:00), но людей может быть
+                    # двое — в таблице они разнесены по строкам 'утро' и 'вечер'.
+                    names = [name for name in (morning, evening) if name]
+                    morning, evening = "", ", ".join(names)
+
+                record = schedule.setdefault(
+                    date_value,
+                    {
+                        "date": date_value,
+                        "morning": "",
+                        "evening": "",
+                        "date_str": cell_value.strip(),
+                        "weekday": self.get_weekday_name(date_value),
+                    },
+                )
+                record["morning"] = record["morning"] or morning
+                record["evening"] = record["evening"] or evening
+
+        parsed = [schedule[date_key] for date_key in sorted(schedule)]
+        self.logger.info(f"Разобран лист '{worksheet.title}': {len(parsed)} дат")
+        return parsed
+
+    def open_duty_worksheet(self, sheet):
+        gid = self.config.duty_sheet_gid
+        if gid is not None:
+            try:
+                return sheet.get_worksheet_by_id(gid)
+            except Exception as exc:
+                self.logger.warning(f"Лист дежурств с gid={gid} не найден ({exc}), ищу по имени")
+
+        target_title = self.config.duty_sheet_name.strip().casefold()
+        for worksheet in sheet.worksheets():
+            if worksheet.title.strip().casefold() == target_title:
+                return worksheet
+
+        raise ValueError(
+            f"Лист дежурств не найден: gid={gid}, имя={self.config.duty_sheet_name!r}"
+        )
 
     def update_google_sheets(self) -> None:
         try:
@@ -240,33 +322,18 @@ class ScheduleService:
                 return
 
             sheet = client.open_by_url(self.config.google_sheet_url)
-            evening_schedule = []
-            morning_schedule = []
+            worksheet = self.open_duty_worksheet(sheet)
+            schedule = self.parse_duty_sheet(worksheet)
 
-            try:
-                evening_ws = sheet.worksheet("Вечернее дежурство")
-                evening_data = self.parse_schedule_data(evening_ws, "evening")
-                if evening_data:
-                    evening_schedule = evening_data
-            except Exception as exc:
-                self.logger.error(f"Ошибка чтения листа 'Вечернее дежурство': {exc}")
-
-            try:
-                morning_ws = sheet.worksheet("Дежурство по утрам")
-                morning_data = self.parse_schedule_data(morning_ws, "morning")
-                if morning_data:
-                    morning_schedule = morning_data
-            except Exception as exc:
-                self.logger.warning(f"Не удалось прочитать лист 'Дежурство по утрам': {exc}")
-
-            combined_schedule = self.combine_schedules(evening_schedule, morning_schedule)
+            if not schedule:
+                raise ValueError(f"В листе '{worksheet.title}' не найдено ни одной даты")
 
             with self.cache_lock:
-                self.data_cache["schedule"] = combined_schedule
+                self.data_cache["schedule"] = schedule
                 self.data_cache["last_update"] = time.time()
                 self.data_cache["error"] = None
 
-            self.logger.info(f"Данные успешно обновлены. Всего записей: {len(combined_schedule)}")
+            self.logger.info(f"Данные успешно обновлены. Всего записей: {len(schedule)}")
         except Exception as exc:
             error_message = f"Ошибка при обновлении данных: {exc}"
             with self.cache_lock:
@@ -353,8 +420,8 @@ class ScheduleService:
                 week_json.append(
                     {
                         "date": duty["date"].strftime("%Y-%m-%d"),
-                        "morning": duty.get("morning", ""),
-                        "evening": duty.get("evening", ""),
+                        "morning": self.shorten_name(duty.get("morning", "")),
+                        "evening": self.shorten_name(duty.get("evening", "")),
                         "date_str": duty["date"].strftime("%d.%m"),
                         "weekday": duty["weekday"],
                     }
@@ -365,8 +432,8 @@ class ScheduleService:
         return {
             "today": current_dt.date().strftime("%Y-%m-%d"),
             "today_duty": {
-                "morning": today_duty.get("morning", "") if today_duty else "",
-                "evening": today_duty.get("evening", "") if today_duty else "",
+                "morning": self.shorten_name(today_duty.get("morning", "")) if today_duty else "",
+                "evening": self.shorten_name(today_duty.get("evening", "")) if today_duty else "",
                 "date": today_duty["date"].strftime("%Y-%m-%d") if today_duty else "",
             } if today_duty else None,
             "weeks": weeks_json,

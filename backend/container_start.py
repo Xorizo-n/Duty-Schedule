@@ -6,6 +6,7 @@ import sys
 
 
 APP_USER = "appuser"
+BACKEND_DIR = pathlib.Path(__file__).resolve().parent
 DEFAULT_LOG_DIR = "/app/logs"
 
 
@@ -41,8 +42,10 @@ def main() -> None:
         print(f"Failed to prepare log directory '{log_dir}': {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # cwd=BACKEND_DIR: gunicorn кладет рабочий каталог в sys.path и находит wsgi.
     subprocess.run(
         ["gunicorn", "-c", "gunicorn.conf.py", "wsgi:app"],
+        cwd=BACKEND_DIR,
         check=True,
     )
 
