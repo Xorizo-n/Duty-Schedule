@@ -115,10 +115,9 @@ class ScheduleService:
 
     def get_google_sheets_client(self):
         try:
-            scope = [
-                "https://spreadsheets.google.com/feeds",
-                "https://www.googleapis.com/auth/drive",
-            ]
+            # Минимально необходимый доступ: только чтение таблиц.
+            # Полный scope drive дал бы сервисному аккаунту запись во весь Drive.
+            scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
             credentials_path = self.config.base_dir / self.config.credentials_file
             if not credentials_path.exists():
                 self.logger.error(f"Файл учетных данных не найден: {credentials_path}")
