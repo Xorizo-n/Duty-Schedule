@@ -17,6 +17,9 @@ from .config import AppConfig
 
 SATURDAY = 5
 
+# Отчество: последнее слово ФИО. Используется и здесь, и в vk_bot.
+PATRONYMIC_PATTERN = re.compile(r"(?:ович|евич|ьевич|овна|евна|ична|инична)$", re.IGNORECASE)
+
 
 class ScheduleService:
     def __init__(self, config: AppConfig, logger: logging.Logger) -> None:
@@ -185,6 +188,31 @@ class ScheduleService:
         if not candidates:
             return None
         return min(candidates, key=lambda candidate: abs((candidate - reference).days))
+
+    @staticmethod
+    def shorten_name(name: str) -> str:
+        """Убирает отчества: на табло достаточно фамилии и имени.
+
+        Отсекается только слово, похожее на отчество, и только начиная с
+        третьего — иначе фамилия вида «Иванович» потерялась бы вместе с ним.
+        """
+        if not name:
+            return ""
+
+        chunks = []
+        for chunk in name.split(","):
+            words = chunk.split()
+            if len(words) >= 3:
+                words = [
+                    word
+                    for index, word in enumerate(words)
+                    if index < 2 or not PATRONYMIC_PATTERN.search(word)
+                ]
+            shortened = " ".join(words)
+            if shortened:
+                chunks.append(shortened)
+
+        return ", ".join(chunks)
 
     @staticmethod
     def get_weekday_name(date_obj: date) -> str:
@@ -392,8 +420,8 @@ class ScheduleService:
                 week_json.append(
                     {
                         "date": duty["date"].strftime("%Y-%m-%d"),
-                        "morning": duty.get("morning", ""),
-                        "evening": duty.get("evening", ""),
+                        "morning": self.shorten_name(duty.get("morning", "")),
+                        "evening": self.shorten_name(duty.get("evening", "")),
                         "date_str": duty["date"].strftime("%d.%m"),
                         "weekday": duty["weekday"],
                     }
@@ -404,8 +432,8 @@ class ScheduleService:
         return {
             "today": current_dt.date().strftime("%Y-%m-%d"),
             "today_duty": {
-                "morning": today_duty.get("morning", "") if today_duty else "",
-                "evening": today_duty.get("evening", "") if today_duty else "",
+                "morning": self.shorten_name(today_duty.get("morning", "")) if today_duty else "",
+                "evening": self.shorten_name(today_duty.get("evening", "")) if today_duty else "",
                 "date": today_duty["date"].strftime("%Y-%m-%d") if today_duty else "",
             } if today_duty else None,
             "weeks": weeks_json,

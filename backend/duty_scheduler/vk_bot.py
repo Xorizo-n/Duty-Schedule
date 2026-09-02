@@ -11,11 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from .config import AppConfig
-from .schedule_service import ScheduleService
-
-
-# Отчество завершает ФИО: по нему режем ячейку с несколькими дежурными.
-PATRONYMIC_PATTERN = re.compile(r"(?:ович|евич|ьевич|овна|евна|ична|инична)$", re.IGNORECASE)
+from .schedule_service import PATRONYMIC_PATTERN, ScheduleService
 
 
 class VkNotifier:

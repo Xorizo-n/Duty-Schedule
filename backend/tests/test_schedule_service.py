@@ -87,6 +87,46 @@ class ScheduleServiceTestCase(unittest.TestCase):
             "Толстогузов Никита, Юртаев Дмитрий",
         )
 
+    def test_shorten_name_drops_patronymics_only(self) -> None:
+        self.assertEqual(
+            ScheduleService.shorten_name("Козлов Данила Дмитриевич"),
+            "Козлов Данила",
+        )
+        self.assertEqual(
+            ScheduleService.shorten_name("Козлов Егор Евгеньевич, Козлов Данила Дмитриевич"),
+            "Козлов Егор, Козлов Данила",
+        )
+        # Одно слово и пара «фамилия имя» остаются как есть.
+        self.assertEqual(ScheduleService.shorten_name("Юрчик"), "Юрчик")
+        self.assertEqual(ScheduleService.shorten_name("Иванович Пётр"), "Иванович Пётр")
+        # Легаси-ячейка с двумя людьми без отчеств не должна обрезаться.
+        self.assertEqual(
+            ScheduleService.shorten_name("Толстогузов Никита Юртаев Дмитрий"),
+            "Толстогузов Никита Юртаев Дмитрий",
+        )
+
+    def test_build_api_payload_shortens_names_but_cache_keeps_them_full(self) -> None:
+        self.service.data_cache["schedule"] = [
+            {
+                "date": date(2026, 9, 5),
+                "morning": "",
+                "evening": "Козлов Егор Евгеньевич, Козлов Данила Дмитриевич",
+                "date_str": "05.09",
+                "weekday": "СБ",
+            }
+        ]
+
+        with patch.object(self.service, "get_current_datetime", return_value=self.reference):
+            payload = self.service.build_api_payload()
+
+        saturday = payload["weeks"][0][5]
+        self.assertEqual(saturday["evening"], "Козлов Егор, Козлов Данила")
+        # В кэше остаются полные ФИО — их использует VK-нотифаер.
+        self.assertEqual(
+            self.service.get_schedule_entry_by_date(date(2026, 9, 5))["evening"],
+            "Козлов Егор Евгеньевич, Козлов Данила Дмитриевич",
+        )
+
     def test_build_api_payload_returns_expected_frontend_shape(self) -> None:
         self.service.data_cache["schedule"] = [
             {
@@ -103,8 +143,8 @@ class ScheduleServiceTestCase(unittest.TestCase):
             payload = self.service.build_api_payload()
 
         self.assertEqual(payload["today"], "2026-09-02")
-        self.assertEqual(payload["today_duty"]["morning"], "Щербатых Кирилл Александрович")
-        self.assertEqual(payload["today_duty"]["evening"], "Пичугин Максим Константинович")
+        self.assertEqual(payload["today_duty"]["morning"], "Щербатых Кирилл")
+        self.assertEqual(payload["today_duty"]["evening"], "Пичугин Максим")
         self.assertEqual(payload["weeks"][0][0]["date"], "2026-08-31")
         self.assertEqual(payload["weeks"][0][2]["date_str"], "02.09")
 
