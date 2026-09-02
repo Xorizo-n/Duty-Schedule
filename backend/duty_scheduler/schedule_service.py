@@ -118,7 +118,7 @@ class ScheduleService:
             # Минимально необходимый доступ: только чтение таблиц.
             # Полный scope drive дал бы сервисному аккаунту запись во весь Drive.
             scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-            credentials_path = self.config.base_dir / self.config.credentials_file
+            credentials_path = self.config.project_root / self.config.credentials_file
             if not credentials_path.exists():
                 self.logger.error(f"Файл учетных данных не найден: {credentials_path}")
                 return None

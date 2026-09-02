@@ -10,7 +10,8 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class AppConfig:
-    base_dir: Path
+    project_root: Path
+    frontend_dir: Path
     google_sheet_url: str
     credentials_file: str
     duty_sheet_gid: int | None
@@ -46,13 +47,15 @@ def _load_duty_sheet_gid() -> int | None:
 
 
 def load_config() -> AppConfig:
-    base_dir = Path(__file__).resolve().parent.parent
+    # config.py -> duty_scheduler -> backend -> корень проекта
+    project_root = Path(__file__).resolve().parents[2]
     google_sheet_url = os.getenv("GOOGLE_SHEET_URL")
     if not google_sheet_url:
         raise ValueError("GOOGLE_SHEET_URL не установлен в переменных окружения")
 
     return AppConfig(
-        base_dir=base_dir,
+        project_root=project_root,
+        frontend_dir=Path(os.getenv("FRONTEND_DIR") or project_root / "frontend"),
         google_sheet_url=google_sheet_url,
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
         duty_sheet_gid=_load_duty_sheet_gid(),

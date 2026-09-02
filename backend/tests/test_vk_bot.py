@@ -18,13 +18,13 @@ class VkNotifierTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-        self.base_dir = Path(self.temp_dir.name)
-        self.config = make_config(base_dir=self.base_dir)
+        self.project_root = Path(self.temp_dir.name)
+        self.config = make_config(project_root=self.project_root)
         self.schedule_service = ScheduleService(self.config, logging.getLogger("vk-schedule-service-test"))
         self.notifier = VkNotifier(self.config, logging.getLogger("vk-notifier-test"), self.schedule_service)
 
     def write_mapping(self, mapping: dict) -> None:
-        mapping_path = self.base_dir / self.config.vk_users_file
+        mapping_path = self.project_root / self.config.vk_users_file
         mapping_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
 
     def test_format_vk_notification_uses_mentions_for_multiple_people(self) -> None:

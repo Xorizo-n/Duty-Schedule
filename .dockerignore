@@ -88,6 +88,7 @@ logs/
 *.pid.lock
 
 # Тесты
+backend/tests/
 tests/
 test/
 .tox/
@@ -107,9 +108,7 @@ docs/
 !CHANGELOG.md
 !LICENSE.txt
 
-# Исключения (что НУЖНО включать)
-!requirements.txt
-!duty_app.py
-!static/
-!templates/
+# Исключение: пример конфига можно класть в образ.
+# Остальное не перечисляем — что попадет в образ, решает явный COPY в Dockerfile,
+# а "!" здесь могли бы случайно вернуть обратно backend/tests.
 !.env.example

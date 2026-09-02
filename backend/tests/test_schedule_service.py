@@ -16,7 +16,7 @@ class ScheduleServiceTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
-        self.config = make_config(base_dir=Path(self.temp_dir.name))
+        self.config = make_config(project_root=Path(self.temp_dir.name))
         self.service = ScheduleService(self.config, logging.getLogger("schedule-service-test"))
         self.reference = datetime(2026, 9, 2, 10, 0, 0, tzinfo=self.service.server_tz)
 

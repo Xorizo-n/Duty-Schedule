@@ -5,9 +5,10 @@ from pathlib import Path
 from duty_scheduler.config import AppConfig
 
 
-def make_config(base_dir: Path) -> AppConfig:
+def make_config(project_root: Path) -> AppConfig:
     return AppConfig(
-        base_dir=base_dir,
+        project_root=project_root,
+        frontend_dir=project_root / "frontend",
         google_sheet_url="https://example.com/sheet",
         credentials_file="credentials.json",
         duty_sheet_gid=1262048925,
@@ -19,7 +20,7 @@ def make_config(base_dir: Path) -> AppConfig:
         vk_users_file="vk_users.json",
         console_log_level="INFO",
         file_log_level="WARNING",
-        log_dir=str(base_dir / "logs"),
+        log_dir=str(project_root / "logs"),
         google_update_interval=60,
         ntp_update_interval=60,
         app_version="2.2.0",

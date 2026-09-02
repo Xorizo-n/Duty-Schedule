@@ -47,7 +47,7 @@ class VkNotifier:
                 self.logger.error(f"Ошибка notification_checker: {exc}")
 
     def load_vk_user_mapping(self) -> dict:
-        mapping_path = self.config.base_dir / self.config.vk_users_file
+        mapping_path = self.config.project_root / self.config.vk_users_file
         if not mapping_path.exists():
             self.logger.warning(f"Файл соответствий VK не найден: {mapping_path}")
             return {}

@@ -2,20 +2,18 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Копируем зависимости
-COPY requirements.txt .
+# Зависимости бэкенда
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Устанавливаем зависимости
-RUN pip install --no-cache-dir -r requirements.txt
+# Бэкенд: приложение, точки входа, конфиг gunicorn
+COPY backend/ ./backend/
 
-# Копируем код приложения
-COPY container_start.py .
-COPY duty_app.py .
-COPY wsgi.py .
-COPY gunicorn.conf.py .
-COPY duty_scheduler/ ./duty_scheduler/
-COPY templates/ ./templates/
-COPY static/ ./static/
+# Фронтенд: шаблоны и статика (собирать нечего — vanilla JS)
+COPY frontend/ ./frontend/
+
+# Секреты (credentials.json, .env, vk_users.json) в образ не попадают:
+# они монтируются томами из docker-compose и отсечены в .dockerignore.
 
 # Создаем пользователя для безопасности
 RUN useradd -m -u 1000 appuser \
@@ -24,4 +22,4 @@ RUN useradd -m -u 1000 appuser \
 
 EXPOSE 5000
 
-CMD ["python", "container_start.py"]
+CMD ["python", "backend/container_start.py"]

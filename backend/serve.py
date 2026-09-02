@@ -1,7 +1,11 @@
 import os
+import pathlib
 import subprocess
 
 from duty_scheduler import create_app, start_background_workers
+
+
+BACKEND_DIR = pathlib.Path(__file__).resolve().parent
 
 
 def run_waitress() -> None:
@@ -19,8 +23,10 @@ def run_waitress() -> None:
 
 def run_gunicorn() -> None:
     config_path = os.getenv("GUNICORN_CONFIG", "gunicorn.conf.py")
+    # cwd=BACKEND_DIR: gunicorn кладет рабочий каталог в sys.path и находит wsgi.
     subprocess.run(
         ["gunicorn", "-c", config_path, "wsgi:app"],
+        cwd=BACKEND_DIR,
         check=True,
     )
 

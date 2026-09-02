@@ -5,7 +5,7 @@ import unittest
 
 from flask import Flask
 
-from duty_scheduler.backend import backend_bp
+from duty_scheduler.api import api_bp
 
 
 class FakeScheduleService:
@@ -26,12 +26,12 @@ class FakeScheduleService:
         return datetime(2026, 6, 8, 10, 0, 0)
 
 
-class BackendBlueprintTestCase(unittest.TestCase):
+class ApiBlueprintTestCase(unittest.TestCase):
     def setUp(self) -> None:
         app = Flask(__name__)
         app.config["APP_VERSION"] = "2.2.0"
         app.extensions["schedule_service"] = FakeScheduleService()
-        app.register_blueprint(backend_bp)
+        app.register_blueprint(api_bp)
         self.client = app.test_client()
 
     def test_api_data_returns_expected_payload(self) -> None:
