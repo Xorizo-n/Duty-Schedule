@@ -153,9 +153,9 @@ class VkNotifier:
             user_mapping = self.load_vk_user_mapping()
 
         mentions = [self.get_vk_mention(name, user_mapping) for name in duty_names]
-        # Каждый дежурный с новой строки: в беседе список читается лучше,
-        # чем перечисление через запятую, а упоминания не слипаются.
-        return "\n".join(mentions)
+        if len(mentions) == 1:
+            return mentions[0]
+        return ", ".join(mentions[:-1]) + f" и {mentions[-1]}"
 
     def format_vk_notification(self, notification_type: str, duty_date: date, duty_name: str) -> str:
         user_mapping = self.load_vk_user_mapping()
@@ -173,8 +173,6 @@ class VkNotifier:
         else:
             prefix = f"Завтра ({date_label}, {weekday_label}) утром {verb}"
 
-        if len(duty_names) > 1:
-            return f"{prefix}:\n{duty_label}"
         return f"{prefix}: {duty_label}."
 
     def send_vk_message(self, message: str) -> bool:
