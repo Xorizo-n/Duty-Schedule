@@ -44,6 +44,11 @@ class VkNotifierTestCase(unittest.TestCase):
         self.assertIn("[id101|Иван Иванов]", message)
         self.assertIn("[id202|Петр]", message)
         self.assertIn("дежурят", message)
+        # Каждый дежурный с новой строки, без запятых и «и» между ними.
+        self.assertEqual(
+            message.split(":\n")[1].split("\n"),
+            ["[id101|Иван Иванов]", "[id202|Петр]"],
+        )
 
     def test_get_vk_mention_matches_full_name_against_short_mapping_key(self) -> None:
         self.write_mapping({"Козлов Данила": 118945590})
@@ -83,6 +88,34 @@ class VkNotifierTestCase(unittest.TestCase):
         self.assertIn("[id92581714|Козлов Егор Евгеньевич]", sent_message)
         self.assertIn("[id118945590|Козлов Данила Дмитриевич]", sent_message)
         self.assertIn("дежурят", sent_message)
+
+    def test_multiple_duty_names_are_separated_by_line_breaks(self) -> None:
+        self.write_mapping({"Козлов Егор": 92581714, "Козлов Данила": 118945590})
+
+        message = self.notifier.format_vk_notification(
+            "saturday_tomorrow",
+            datetime(2026, 9, 5).date(),
+            "Козлов Егор Евгеньевич, Козлов Данила Дмитриевич",
+        )
+
+        self.assertEqual(
+            message,
+            "В эту субботу (05.09) дежурят:"
+            + "\n" + "[id92581714|Козлов Егор Евгеньевич]"
+            + "\n" + "[id118945590|Козлов Данила Дмитриевич]",
+        )
+        self.assertNotIn(",", message.split("дежурят:")[1])
+        self.assertNotIn(" и ", message)
+
+    def test_single_duty_name_stays_on_one_line(self) -> None:
+        self.write_mapping({"Козлов Егор": 92581714})
+
+        message = self.notifier.format_vk_notification(
+            "saturday_today", datetime(2026, 9, 5).date(), "Козлов Егор Евгеньевич"
+        )
+
+        self.assertEqual(message, "В эту субботу (05.09) дежурит: [id92581714|Козлов Егор Евгеньевич].")
+        self.assertNotIn("\n", message)
 
     def test_saturday_morning_notification_is_sent_on_saturday_itself(self) -> None:
         saturday = datetime(2026, 9, 5, 10, 0, 0, tzinfo=self.schedule_service.server_tz)
