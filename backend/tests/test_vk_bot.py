@@ -79,10 +79,44 @@ class VkNotifierTestCase(unittest.TestCase):
             self.notifier.check_upcoming_duties()
 
         sent_message = send_vk_message.call_args[0][0]
-        self.assertIn("в субботу (05.09, СБ)", sent_message)
+        self.assertIn("В эту субботу (05.09)", sent_message)
         self.assertIn("[id92581714|Козлов Егор Евгеньевич]", sent_message)
         self.assertIn("[id118945590|Козлов Данила Дмитриевич]", sent_message)
         self.assertIn("дежурят", sent_message)
+
+    def test_saturday_morning_notification_is_sent_on_saturday_itself(self) -> None:
+        saturday = datetime(2026, 9, 5, 10, 0, 0, tzinfo=self.schedule_service.server_tz)
+        duty_entry = {"evening": "Козлов Егор Евгеньевич", "morning": ""}
+        self.write_mapping({"Козлов Егор": 92581714})
+
+        with patch.object(self.schedule_service, "get_current_datetime", return_value=saturday),              patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value=duty_entry),              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.notifier.check_upcoming_duties()
+
+        sent_message = send_vk_message.call_args[0][0]
+        self.assertIn("В эту субботу (05.09)", sent_message)
+        # Не «вечером»: по субботам смена одна, с 8:00 до 16:00.
+        self.assertNotIn("вечером", sent_message)
+
+    def test_saturday_is_announced_both_on_friday_evening_and_saturday_morning(self) -> None:
+        duty_entry = {"evening": "Козлов Егор Евгеньевич", "morning": ""}
+        self.write_mapping({"Козлов Егор": 92581714})
+        friday = datetime(2026, 9, 4, 19, 0, 0, tzinfo=self.schedule_service.server_tz)
+        saturday = datetime(2026, 9, 5, 10, 0, 0, tzinfo=self.schedule_service.server_tz)
+
+        with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value=duty_entry),              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            for moment in (friday, friday, saturday, saturday):
+                with patch.object(self.schedule_service, "get_current_datetime", return_value=moment):
+                    self.notifier.check_upcoming_duties()
+
+        # Ровно два сообщения: повторные проверки в ту же минуту дедуплицируются.
+        self.assertEqual(send_vk_message.call_count, 2)
+
+    def test_no_notification_outside_the_scheduled_minute(self) -> None:
+        moment = datetime(2026, 9, 4, 19, 1, 0, tzinfo=self.schedule_service.server_tz)
+        with patch.object(self.schedule_service, "get_current_datetime", return_value=moment),              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.notifier.check_upcoming_duties()
+
+        self.assertFalse(send_vk_message.called)
 
     def test_check_upcoming_duties_uses_evening_schedule_for_saturday_notification(self) -> None:
         saturday = datetime(2026, 6, 12, 19, 0, 0, tzinfo=self.schedule_service.server_tz)
@@ -96,7 +130,7 @@ class VkNotifierTestCase(unittest.TestCase):
 
         self.assertTrue(send_vk_message.called)
         sent_message = send_vk_message.call_args[0][0]
-        self.assertIn("в субботу", sent_message)
+        self.assertIn("В эту субботу (13.06)", sent_message)
         self.assertIn("[id101|Иван Иванов]", sent_message)
         self.assertIn("[id202|Петр Петров]", sent_message)
 

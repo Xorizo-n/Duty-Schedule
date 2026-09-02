@@ -11,7 +11,12 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 
 from .config import AppConfig
-from .schedule_service import PATRONYMIC_PATTERN, ScheduleService
+from .schedule_service import PATRONYMIC_PATTERN, SATURDAY, ScheduleService
+
+
+MORNING_NOTIFICATION_HOUR = 10
+EVENING_NOTIFICATION_HOUR = 19
+SATURDAY_NOTIFICATION_TYPES = ("saturday_today", "saturday_tomorrow")
 
 
 class VkNotifier:
@@ -160,11 +165,15 @@ class VkNotifier:
         date_label = duty_date.strftime("%d.%m")
         weekday_label = self.schedule_service.get_weekday_name(duty_date)
 
-        if notification_type == "evening_today":
-            return f"Сегодня ({date_label}, {weekday_label}) вечером {verb}: {duty_label}."
-        if notification_type == "saturday_tomorrow":
-            return f"Напоминание: в субботу ({date_label}, {weekday_label}) {verb}: {duty_label}."
-        return f"Завтра ({date_label}, {weekday_label}) утром {verb}: {duty_label}."
+        if notification_type in SATURDAY_NOTIFICATION_TYPES:
+            # Слово «субботу» уже несёт день недели, дублировать его не нужно.
+            prefix = f"В эту субботу ({date_label}) {verb}"
+        elif notification_type == "evening_today":
+            prefix = f"Сегодня ({date_label}, {weekday_label}) вечером {verb}"
+        else:
+            prefix = f"Завтра ({date_label}, {weekday_label}) утром {verb}"
+
+        return f"{prefix}: {duty_label}."
 
     def send_vk_message(self, message: str) -> bool:
         if not self.config.vk_bot_token or not self.config.vk_peer_id:
@@ -204,45 +213,48 @@ class VkNotifier:
         with self.notifications_lock:
             self.last_notifications[key] = value
 
+    def _send_notification(
+        self,
+        notification_type: str,
+        duty_date: date,
+        field_name: str,
+        sent_at: str,
+    ) -> None:
+        notification_key = f"{notification_type}:{duty_date.isoformat()}"
+        if self._already_sent(notification_key):
+            return
+
+        duty_entry = self.schedule_service.get_schedule_entry_by_date(duty_date)
+        duty_name = (duty_entry or {}).get(field_name, "").strip()
+        if not duty_name:
+            self.logger.info(f"На {duty_date} нет дежурства для уведомления ({notification_type})")
+            return
+
+        message = self.format_vk_notification(notification_type, duty_date, duty_name)
+        if self.send_vk_message(message):
+            self._mark_sent(notification_key, sent_at)
+            self.logger.info(f"Отправлено уведомление {notification_type} на {duty_date}")
+
     def check_upcoming_duties(self) -> None:
         current_dt = self.schedule_service.get_current_datetime()
         current_date = current_dt.date()
 
-        if current_dt.hour == 10 and current_dt.minute == 0:
-            notification_key = f"evening_today:{current_date.isoformat()}"
-            if self._already_sent(notification_key):
-                return
+        if current_dt.minute != 0:
+            return
 
-            today_duty = self.schedule_service.get_schedule_entry_by_date(current_date)
-            duty_name = (today_duty or {}).get("evening", "").strip()
-            if not duty_name:
-                self.logger.info(f"На {current_date} нет вечернего дежурства для уведомления")
-                return
+        sent_at = current_dt.isoformat()
 
-            message = self.format_vk_notification("evening_today", current_date, duty_name)
-            if self.send_vk_message(message):
-                self._mark_sent(notification_key, current_dt.isoformat())
-                self.logger.info(f"Отправлено уведомление о вечернем дежурстве на {current_date}")
+        if current_dt.hour == MORNING_NOTIFICATION_HOUR:
+            if current_date.weekday() == SATURDAY:
+                # Смена уже идёт (с 8:00 до 16:00) — напоминаем о ней в тот же день.
+                self._send_notification("saturday_today", current_date, "evening", sent_at)
+            else:
+                self._send_notification("evening_today", current_date, "evening", sent_at)
+            return
 
-        if current_dt.hour == 19 and current_dt.minute == 0:
+        if current_dt.hour == EVENING_NOTIFICATION_HOUR:
             next_date = current_date + timedelta(days=1)
-            is_saturday = next_date.weekday() == 5
-            notification_type = "saturday_tomorrow" if is_saturday else "morning_tomorrow"
-            notification_key = f"{notification_type}:{next_date.isoformat()}"
-            if self._already_sent(notification_key):
-                return
-
-            next_duty = self.schedule_service.get_schedule_entry_by_date(next_date)
-            field_name = "evening" if is_saturday else "morning"
-            duty_name = (next_duty or {}).get(field_name, "").strip()
-            if not duty_name:
-                self.logger.info(f"На {next_date} нет дежурства для уведомления")
-                return
-
-            message = self.format_vk_notification(notification_type, next_date, duty_name)
-            if self.send_vk_message(message):
-                self._mark_sent(notification_key, current_dt.isoformat())
-                if is_saturday:
-                    self.logger.info(f"Отправлено уведомление о дежурстве на субботу {next_date}")
-                else:
-                    self.logger.info(f"Отправлено уведомление об утреннем дежурстве на {next_date}")
+            if next_date.weekday() == SATURDAY:
+                self._send_notification("saturday_tomorrow", next_date, "evening", sent_at)
+            else:
+                self._send_notification("morning_tomorrow", next_date, "morning", sent_at)
