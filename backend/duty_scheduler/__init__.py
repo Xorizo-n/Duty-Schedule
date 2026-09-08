@@ -5,8 +5,10 @@ from flask import Flask
 from .api import api_bp
 from .config import PROJECT_ROOT, AppConfig, load_config
 from .views import views_bp
-from .logging_utils import apply_log_levels, setup_logging
+from .logging_utils import setup_logging
+from .runtime import apply_runtime_config
 from .schedule_service import ScheduleService
+from .settings_api import settings_api_bp
 from .settings_store import SettingsStore, default_settings_path
 from .vk_bot import VkNotifier
 
@@ -30,6 +32,7 @@ def create_app() -> Flask:
     )
     app.config["APP_VERSION"] = config.app_version
     app.secret_key = settings_store.secret_key()
+    app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
     schedule_service = ScheduleService(config, logger)
     vk_notifier = VkNotifier(config, logger, schedule_service)
@@ -41,26 +44,9 @@ def create_app() -> Flask:
     app.extensions["settings_store"] = settings_store
 
     app.register_blueprint(api_bp)
+    app.register_blueprint(settings_api_bp)
     app.register_blueprint(views_bp)
     return app
-
-
-def apply_runtime_config(app: Flask) -> AppConfig:
-    """Пересобирает конфиг из окружения и настроек и раздаёт его сервисам.
-
-    Ничего не перезапускает: и обновитель расписания, и VK-нотифаер читают
-    `self.config` на каждой итерации своего цикла, поэтому новые значения
-    подхватываются сами.
-    """
-    settings_store: SettingsStore = app.extensions["settings_store"]
-    config = load_config(settings_store.overrides())
-
-    app.extensions["config"] = config
-    app.config["APP_VERSION"] = config.app_version
-    apply_log_levels(app.extensions["logger"], config)
-    app.extensions["schedule_service"].apply_config(config)
-    app.extensions["vk_notifier"].apply_config(config)
-    return config
 
 
 def start_background_workers(app: Flask) -> None:
@@ -79,3 +65,12 @@ def start_background_workers(app: Flask) -> None:
 
 def get_config(app: Flask) -> AppConfig:
     return app.extensions["config"]
+
+
+__all__ = [
+    "AppConfig",
+    "apply_runtime_config",
+    "create_app",
+    "get_config",
+    "start_background_workers",
+]
