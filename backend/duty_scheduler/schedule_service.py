@@ -48,6 +48,11 @@ class ScheduleService:
             self.logger.info("Фоновый обновитель backend запущен")
             self.started = True
 
+    def apply_config(self, config: AppConfig) -> None:
+        """Подхватывает новый конфиг из настроек без перезапуска процесса."""
+        self.config = config
+        self.server_tz = pytz.timezone(config.server_timezone)
+
     def _background_updater(self) -> None:
         self.logger.info("Старт фонового обновителя расписания")
         self.update_ntp_time()
@@ -314,6 +319,13 @@ class ScheduleService:
         )
 
     def update_google_sheets(self) -> None:
+        if not self.config.google_sheet_url:
+            message = "Не задана ссылка на Google-таблицу — укажите её в настройках"
+            with self.cache_lock:
+                self.data_cache["error"] = message
+            self.logger.error(message)
+            return
+
         try:
             self.logger.info("Обновление данных из Google Sheets...")
             client = self.get_google_sheets_client()

@@ -10,7 +10,8 @@ def main() -> None:
     print("Запуск Duty Schedule App")
     print("=" * 60)
     print(f"Часовой пояс сервера: {config.server_timezone}")
-    print(f"Google Sheet URL: {config.google_sheet_url[:50]}...")
+    sheet_url = config.google_sheet_url
+    print(f"Google Sheet URL: {sheet_url[:50] + '...' if sheet_url else 'не задан, укажите в /settings'}")
     print(f"VK уведомления: {'включены' if config.vk_bot_token and config.vk_peer_id else 'отключены'}")
     print(f"Версия: {config.app_version}")
     print("=" * 60)

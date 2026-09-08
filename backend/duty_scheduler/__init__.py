@@ -3,10 +3,11 @@ import threading
 from flask import Flask
 
 from .api import api_bp
-from .config import AppConfig, load_config
+from .config import PROJECT_ROOT, AppConfig, load_config
 from .views import views_bp
-from .logging_utils import setup_logging
+from .logging_utils import apply_log_levels, setup_logging
 from .schedule_service import ScheduleService
+from .settings_store import SettingsStore, default_settings_path
 from .vk_bot import VkNotifier
 
 
@@ -15,8 +16,12 @@ _workers_started = False
 
 
 def create_app() -> Flask:
-    config = load_config()
+    # Настройки из файла перекрывают окружение, поэтому читаем их до конфига.
+    settings_store = SettingsStore(default_settings_path(PROJECT_ROOT))
+    config = load_config(settings_store.overrides())
+
     logger = setup_logging(config)
+    settings_store.logger = logger
 
     app = Flask(
         __name__,
@@ -24,6 +29,7 @@ def create_app() -> Flask:
         static_folder=str(config.frontend_dir / "static"),
     )
     app.config["APP_VERSION"] = config.app_version
+    app.secret_key = settings_store.secret_key()
 
     schedule_service = ScheduleService(config, logger)
     vk_notifier = VkNotifier(config, logger, schedule_service)
@@ -32,10 +38,29 @@ def create_app() -> Flask:
     app.extensions["logger"] = logger
     app.extensions["schedule_service"] = schedule_service
     app.extensions["vk_notifier"] = vk_notifier
+    app.extensions["settings_store"] = settings_store
 
     app.register_blueprint(api_bp)
     app.register_blueprint(views_bp)
     return app
+
+
+def apply_runtime_config(app: Flask) -> AppConfig:
+    """Пересобирает конфиг из окружения и настроек и раздаёт его сервисам.
+
+    Ничего не перезапускает: и обновитель расписания, и VK-нотифаер читают
+    `self.config` на каждой итерации своего цикла, поэтому новые значения
+    подхватываются сами.
+    """
+    settings_store: SettingsStore = app.extensions["settings_store"]
+    config = load_config(settings_store.overrides())
+
+    app.extensions["config"] = config
+    app.config["APP_VERSION"] = config.app_version
+    apply_log_levels(app.extensions["logger"], config)
+    app.extensions["schedule_service"].apply_config(config)
+    app.extensions["vk_notifier"].apply_config(config)
+    return config
 
 
 def start_background_workers(app: Flask) -> None:
