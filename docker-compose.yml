@@ -16,6 +16,9 @@ services:
       - VK_PEER_ID=${VK_PEER_ID}
       - VK_API_VERSION=${VK_API_VERSION:-5.199}
       - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
+      - VK_COMMANDS_ENABLED=${VK_COMMANDS_ENABLED:-1}
+      - VK_GROUP_ID=${VK_GROUP_ID:-}
+      - SETTINGS_FILE=${SETTINGS_FILE:-/app/data/settings.json}
       - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
       - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
       - LOG_DIR=${LOG_DIR:-/app/logs}
@@ -24,6 +27,9 @@ services:
       - ./credentials.json:/app/credentials.json:ro
       - ./vk_users.json:/app/vk_users.json:ro
       - duty_logs:/app/logs
+      # Настройки, заданные через /settings. Именованный том, а не bind-mount:
+      # файл пишет сам контейнер под appuser, права хоста тут только мешают.
+      - duty_settings:/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"
@@ -55,3 +61,4 @@ services:
 
 volumes:
   duty_logs:
+  duty_settings:

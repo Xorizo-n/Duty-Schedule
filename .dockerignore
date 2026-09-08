@@ -47,6 +47,7 @@ venv.bak/
 
 # Файлы учетных данных - НИКОГДА в образ!
 credentials.json
+settings.json
 *.pem
 *.key
 *.crt
