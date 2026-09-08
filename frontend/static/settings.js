@@ -1,0 +1,273 @@
+class SettingsPage {
+    constructor() {
+        this.messageElement = document.getElementById("message");
+        this.authCard = document.getElementById("auth-card");
+        this.authTitle = document.getElementById("auth-title");
+        this.authHint = document.getElementById("auth-hint");
+        this.authForm = document.getElementById("auth-form");
+        this.authSubmit = document.getElementById("auth-submit");
+        this.passwordInput = document.getElementById("password");
+        this.passwordRepeatField = document.getElementById("password-repeat-field");
+        this.passwordRepeatInput = document.getElementById("password-repeat");
+        this.settingsForm = document.getElementById("settings-form");
+        this.groupsContainer = document.getElementById("settings-groups");
+        this.logoutButton = document.getElementById("logout-button");
+        this.reloadButton = document.getElementById("reload-button");
+        this.changePasswordButton = document.getElementById("change-password-button");
+
+        // "set" — пароль задаётся впервые, "change" — меняется, "login" — вход.
+        this.authMode = "login";
+
+        this.authForm.addEventListener("submit", (event) => this.onAuthSubmit(event));
+        this.settingsForm.addEventListener("submit", (event) => this.onSave(event));
+        this.logoutButton.addEventListener("click", () => this.onLogout());
+        this.reloadButton.addEventListener("click", () => this.loadSettings());
+        this.changePasswordButton.addEventListener("click", () => this.showAuth("change"));
+
+        this.init();
+    }
+
+    async init() {
+        const session = await this.request("/api/settings/session");
+        if (!session.ok) {
+            return;
+        }
+
+        if (session.body.authenticated) {
+            await this.loadSettings();
+            return;
+        }
+
+        this.showAuth(session.body.password_set ? "login" : "set");
+    }
+
+    async request(url, options = {}) {
+        try {
+            const response = await fetch(url, {
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+                ...options,
+            });
+            const body = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                this.showMessage(body.error || `Ошибка запроса (HTTP ${response.status})`, "error");
+            }
+            return { ok: response.ok, status: response.status, body };
+        } catch (error) {
+            this.showMessage(`Сервер недоступен: ${error.message}`, "error");
+            return { ok: false, status: 0, body: {} };
+        }
+    }
+
+    showMessage(text, kind) {
+        this.messageElement.textContent = text;
+        this.messageElement.className = `settings-message is-${kind}`;
+        this.messageElement.hidden = !text;
+    }
+
+    clearMessage() {
+        this.messageElement.hidden = true;
+        this.messageElement.textContent = "";
+    }
+
+    showAuth(mode) {
+        this.authMode = mode;
+        const isNewPassword = mode !== "login";
+
+        this.authTitle.textContent = mode === "set" ? "Задайте пароль" : mode === "change" ? "Смена пароля" : "Вход";
+        this.authHint.textContent = mode === "set"
+            ? "Пароль спрашивается при каждом следующем заходе в настройки. Не короче 6 символов."
+            : mode === "change"
+                ? "Введите новый пароль. Не короче 6 символов."
+                : "Введите пароль от настроек.";
+
+        this.authSubmit.textContent = isNewPassword ? "Сохранить пароль" : "Войти";
+        this.passwordRepeatField.hidden = !isNewPassword;
+        this.passwordRepeatInput.required = isNewPassword;
+        this.passwordInput.autocomplete = isNewPassword ? "new-password" : "current-password";
+        this.passwordInput.value = "";
+        this.passwordRepeatInput.value = "";
+
+        this.authCard.hidden = false;
+        this.settingsForm.hidden = true;
+        this.logoutButton.hidden = mode !== "change";
+        this.passwordInput.focus();
+    }
+
+    async onAuthSubmit(event) {
+        event.preventDefault();
+        this.clearMessage();
+
+        const password = this.passwordInput.value;
+        if (this.authMode !== "login" && password !== this.passwordRepeatInput.value) {
+            this.showMessage("Пароли не совпадают", "error");
+            return;
+        }
+
+        const url = this.authMode === "login" ? "/api/settings/login" : "/api/settings/password";
+        const result = await this.request(url, {
+            method: "POST",
+            body: JSON.stringify({ password }),
+        });
+
+        if (!result.ok) {
+            this.passwordInput.value = "";
+            this.passwordRepeatInput.value = "";
+            return;
+        }
+
+        if (this.authMode === "change") {
+            this.showMessage("Пароль изменён", "success");
+        }
+        await this.loadSettings();
+    }
+
+    async onLogout() {
+        await this.request("/api/settings/logout", { method: "POST" });
+        this.clearMessage();
+        this.showAuth("login");
+    }
+
+    async loadSettings() {
+        const result = await this.request("/api/settings");
+        if (!result.ok) {
+            if (result.status === 401) {
+                this.showAuth("login");
+            }
+            return;
+        }
+
+        this.renderGroups(result.body.groups || []);
+        this.authCard.hidden = true;
+        this.settingsForm.hidden = false;
+        this.logoutButton.hidden = false;
+    }
+
+    renderGroups(groups) {
+        this.groupsContainer.innerHTML = "";
+
+        groups.forEach((group) => {
+            const card = document.createElement("section");
+            card.className = "settings-card glass-effect";
+
+            const title = document.createElement("h2");
+            title.textContent = group.title;
+            card.appendChild(title);
+
+            group.fields.forEach((field) => card.appendChild(this.renderField(field)));
+            this.groupsContainer.appendChild(card);
+        });
+    }
+
+    renderField(field) {
+        const wrapper = document.createElement("label");
+        wrapper.className = field.kind === "bool" ? "settings-field settings-checkbox" : "settings-field";
+
+        const input = this.createInput(field);
+        input.id = `field-${field.key}`;
+        input.dataset.key = field.key;
+        input.dataset.kind = field.kind;
+
+        const label = document.createElement("span");
+        label.className = "settings-label";
+        label.textContent = field.label;
+        label.appendChild(this.renderSource(field));
+
+        if (field.kind === "bool") {
+            wrapper.appendChild(input);
+            wrapper.appendChild(label);
+            return wrapper;
+        }
+
+        wrapper.appendChild(label);
+        wrapper.appendChild(input);
+
+        if (field.hint) {
+            const hint = document.createElement("span");
+            hint.className = "settings-field-hint";
+            hint.textContent = field.hint;
+            wrapper.appendChild(hint);
+        }
+
+        return wrapper;
+    }
+
+    createInput(field) {
+        if (field.kind === "bool") {
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = Boolean(field.value);
+            return input;
+        }
+
+        if (field.kind === "select") {
+            const select = document.createElement("select");
+            (field.choices || []).forEach((choice) => {
+                const option = document.createElement("option");
+                option.value = choice;
+                option.textContent = choice;
+                option.selected = choice === field.value;
+                select.appendChild(option);
+            });
+            return select;
+        }
+
+        const input = document.createElement("input");
+        // Секрет приходит плейсхолдером; отправив его обратно, оставим токен как был.
+        input.type = field.kind === "secret" ? "password" : "text";
+        input.value = field.value === null || field.value === undefined ? "" : String(field.value);
+        input.autocomplete = "off";
+        return input;
+    }
+
+    renderSource(field) {
+        const badge = document.createElement("span");
+        const stored = field.source === "settings";
+        badge.className = stored ? "settings-source is-stored" : "settings-source";
+        badge.textContent = stored ? "из настроек" : field.env;
+        badge.title = stored
+            ? "Значение хранится в настройках и переживёт пересоздание контейнера"
+            : `Значение взято из переменной окружения ${field.env}`;
+        return badge;
+    }
+
+    collectValues() {
+        const values = {};
+        this.groupsContainer.querySelectorAll("[data-key]").forEach((input) => {
+            values[input.dataset.key] = input.dataset.kind === "bool" ? input.checked : input.value;
+        });
+        return values;
+    }
+
+    async onSave(event) {
+        event.preventDefault();
+        this.clearMessage();
+
+        const submitButton = this.settingsForm.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        try {
+            const result = await this.request("/api/settings", {
+                method: "POST",
+                body: JSON.stringify({ values: this.collectValues() }),
+            });
+
+            if (result.status === 401) {
+                this.showAuth("login");
+                return;
+            }
+            if (!result.ok) {
+                return;
+            }
+
+            this.renderGroups(result.body.groups || []);
+            this.showMessage("Настройки сохранены и применены", "success");
+        } finally {
+            submitButton.disabled = false;
+        }
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    window.settingsPage = new SettingsPage();
+});

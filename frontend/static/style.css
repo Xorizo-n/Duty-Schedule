@@ -477,6 +477,37 @@ body {
     transition: transform 0.3s ease;
 }
 
+/* Вход в настройки. На табло его быть почти не должно: заметная иконка в углу
+   отвлекает от расписания, поэтому в покое она почти прозрачна. */
+.settings-link {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: rgba(255, 255, 255, 0.9);
+    opacity: 0.12;
+    cursor: pointer;
+    z-index: 2;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.settings-link:hover,
+.settings-link:focus-visible {
+    opacity: 0.9;
+    transform: rotate(45deg);
+}
+
+.settings-link svg {
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+}
+
 .schedule-section::-webkit-scrollbar {
     width: 6px;
 }

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Настройки — График дежурств</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='settings.css') }}?v={{ version }}">
+</head>
+<body class="settings-page">
+    <div class="settings-shell">
+        <header class="settings-header">
+            <div>
+                <h1>Настройки</h1>
+                <p class="settings-subtitle">График дежурств, версия {{ version }}</p>
+            </div>
+            <div class="settings-header-actions">
+                <button type="button" class="settings-button ghost" id="logout-button" hidden>Выйти</button>
+                <a class="settings-button ghost" href="/">На табло</a>
+            </div>
+        </header>
+
+        <div class="settings-message" id="message" hidden></div>
+
+        <section class="settings-card glass-effect" id="auth-card" hidden>
+            <h2 id="auth-title">Вход</h2>
+            <p class="settings-hint" id="auth-hint"></p>
+            <form id="auth-form" autocomplete="off">
+                <label class="settings-field">
+                    <span class="settings-label">Пароль</span>
+                    <input type="password" id="password" autocomplete="current-password" required>
+                </label>
+                <label class="settings-field" id="password-repeat-field" hidden>
+                    <span class="settings-label">Повторите пароль</span>
+                    <input type="password" id="password-repeat" autocomplete="new-password">
+                </label>
+                <button type="submit" class="settings-button" id="auth-submit">Войти</button>
+            </form>
+        </section>
+
+        <form id="settings-form" hidden>
+            <div id="settings-groups"></div>
+
+            <div class="settings-actions">
+                <button type="submit" class="settings-button">Сохранить</button>
+                <button type="button" class="settings-button ghost" id="reload-button">Отменить правки</button>
+                <button type="button" class="settings-button ghost" id="change-password-button">Сменить пароль</button>
+            </div>
+
+            <p class="settings-note">
+                Значения из настроек перекрывают переменные окружения и переживают
+                пересоздание контейнера. Изменения применяются сразу, перезапуск не нужен.
+            </p>
+        </form>
+    </div>
+
+    <script src="{{ url_for('static', filename='settings.js') }}?v={{ version }}"></script>
+</body>
+</html>
