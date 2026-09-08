@@ -21,6 +21,8 @@ class AppConfig:
     vk_peer_id: str | None
     vk_api_version: str
     vk_users_file: str
+    vk_commands_enabled: bool
+    vk_group_id: int | None
     console_log_level: str
     file_log_level: str
     log_dir: str
@@ -31,6 +33,24 @@ class AppConfig:
 
 DEFAULT_DUTY_SHEET_GID = 1262048925
 DEFAULT_DUTY_SHEET_NAME = "Новое Дежуство"
+TRUE_VALUES = {"1", "true", "yes", "on", "да"}
+
+
+def _load_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    return raw_value.strip().casefold() in TRUE_VALUES
+
+
+def _load_optional_int(name: str) -> int | None:
+    raw_value = os.getenv(name)
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        return int(raw_value.strip())
+    except ValueError:
+        raise ValueError(f"{name} должен быть числом, получено: {raw_value!r}")
 
 
 def _load_duty_sheet_gid() -> int | None:
@@ -65,6 +85,8 @@ def load_config() -> AppConfig:
         vk_peer_id=os.getenv("VK_PEER_ID"),
         vk_api_version=os.getenv("VK_API_VERSION", "5.199"),
         vk_users_file=os.getenv("VK_USERS_FILE", "vk_users.json"),
+        vk_commands_enabled=_load_bool("VK_COMMANDS_ENABLED", True),
+        vk_group_id=_load_optional_int("VK_GROUP_ID"),
         console_log_level=os.getenv("CONSOLE_LOG_LEVEL", "INFO").upper(),
         file_log_level=os.getenv("FILE_LOG_LEVEL", "WARNING").upper(),
         log_dir=os.getenv("LOG_DIR", "/app/logs"),

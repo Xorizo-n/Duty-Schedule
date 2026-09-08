@@ -16,6 +16,7 @@ from .config import AppConfig
 
 
 SATURDAY = 5
+SUNDAY = 6
 
 # Отчество: последнее слово ФИО. Используется и здесь, и в vk_bot.
 PATRONYMIC_PATTERN = re.compile(r"(?:ович|евич|ьевич|овна|евна|ична|инична)$", re.IGNORECASE)
@@ -403,6 +404,10 @@ class ScheduleService:
             display_weeks.append(current_week_data)
 
         return display_weeks
+
+    def get_display_weeks(self) -> list[list[dict]]:
+        """Две рабочие недели из кэша — то же окно, что уходит на табло."""
+        return self.get_two_work_weeks(self.get_schedule_snapshot())
 
     def build_api_payload(self) -> dict:
         with self.cache_lock:
