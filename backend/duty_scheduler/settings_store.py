@@ -163,7 +163,6 @@ SETTING_FIELDS: tuple[SettingField, ...] = (
 )
 
 FIELDS_BY_KEY = {setting.key: setting for setting in SETTING_FIELDS}
-SECRET_KEYS = frozenset(setting.key for setting in SETTING_FIELDS if setting.kind == "secret")
 
 
 def default_settings_path(project_root: Path) -> Path:

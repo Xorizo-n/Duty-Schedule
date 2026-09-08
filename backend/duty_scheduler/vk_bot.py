@@ -43,6 +43,7 @@ COMMAND_ALIASES = {
     "помощь": "help",
     "help": "help",
 }
+COMMAND_NAMES = frozenset(COMMAND_ALIASES.values())
 # "[club1|@club1] сегодня" -> "сегодня": упоминание бота не часть команды.
 VK_MENTION_PATTERN = re.compile(r"\[[^\]]*\|[^\]]*\]")
 
@@ -301,7 +302,7 @@ class VkNotifier:
                 parsed = json.loads(payload)
             except (TypeError, ValueError):
                 parsed = None
-            if isinstance(parsed, dict) and parsed.get("command") in set(COMMAND_ALIASES.values()):
+            if isinstance(parsed, dict) and parsed.get("command") in COMMAND_NAMES:
                 return parsed["command"]
 
         normalized = VK_MENTION_PATTERN.sub(" ", text or "")
@@ -476,7 +477,12 @@ class VkNotifier:
 
     def _commands_loop(self) -> None:
         while True:
-            if not self.config.vk_commands_enabled or not self.config.vk_bot_token:
+            # Без беседы отвечать всё равно некуда — не тревожим VK впустую.
+            if (
+                not self.config.vk_commands_enabled
+                or not self.config.vk_bot_token
+                or not self.config.vk_peer_id
+            ):
                 time.sleep(30)
                 continue
 
