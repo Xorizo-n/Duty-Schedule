@@ -50,7 +50,15 @@ class VkNotifierTestCase(unittest.TestCase):
 
         mention = self.notifier.get_vk_mention("Козлов Данила Дмитриевич")
 
-        self.assertEqual(mention, "[id118945590|Козлов Данила Дмитриевич]")
+        self.assertEqual(mention, "[id118945590|Козлов Данила]")
+
+    def test_get_vk_mention_drops_patronymic_when_vk_id_is_unknown(self) -> None:
+        self.write_mapping({})
+
+        self.assertEqual(
+            self.notifier.get_vk_mention("Козлов Данила Дмитриевич"),
+            "Козлов Данила",
+        )
 
     def test_split_duty_names_splits_two_full_names_without_comma(self) -> None:
         names = self.notifier.split_duty_names(
@@ -80,8 +88,8 @@ class VkNotifierTestCase(unittest.TestCase):
 
         sent_message = send_vk_message.call_args[0][0]
         self.assertIn("В эту субботу (05.09)", sent_message)
-        self.assertIn("[id92581714|Козлов Егор Евгеньевич]", sent_message)
-        self.assertIn("[id118945590|Козлов Данила Дмитриевич]", sent_message)
+        self.assertIn("[id92581714|Козлов Егор]", sent_message)
+        self.assertIn("[id118945590|Козлов Данила]", sent_message)
         self.assertIn("дежурят", sent_message)
 
     def test_multiple_duty_names_stay_on_one_line(self) -> None:
@@ -96,7 +104,7 @@ class VkNotifierTestCase(unittest.TestCase):
         self.assertEqual(
             message,
             "В эту субботу (05.09) дежурят: "
-            "[id92581714|Козлов Егор Евгеньевич] и [id118945590|Козлов Данила Дмитриевич].",
+            "[id92581714|Козлов Егор] и [id118945590|Козлов Данила].",
         )
         self.assertNotIn("\n", message)
 
@@ -107,7 +115,7 @@ class VkNotifierTestCase(unittest.TestCase):
             "saturday_today", datetime(2026, 9, 5).date(), "Козлов Егор Евгеньевич"
         )
 
-        self.assertEqual(message, "В эту субботу (05.09) дежурит: [id92581714|Козлов Егор Евгеньевич].")
+        self.assertEqual(message, "В эту субботу (05.09) дежурит: [id92581714|Козлов Егор].")
 
     def test_saturday_morning_notification_is_sent_on_saturday_itself(self) -> None:
         saturday = datetime(2026, 9, 5, 10, 0, 0, tzinfo=self.schedule_service.server_tz)

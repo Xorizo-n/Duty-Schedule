@@ -94,27 +94,31 @@ class VkNotifier:
         if not duty_name:
             return ""
 
+        # Ищем по полному ФИО (в vk_users.json ключи бывают и полные, и короткие),
+        # а показываем всегда «Фамилия Имя» — отчество в сообщении лишнее.
+        display_name = self.schedule_service.shorten_name(duty_name)
+
         if user_mapping is None:
             user_mapping = self.load_vk_user_mapping()
 
         user_info = self.find_user_info(duty_name, user_mapping)
         if user_info is None:
             self.logger.warning(f"Для '{duty_name}' не найден VK id, используем обычное имя")
-            return duty_name
+            return display_name
 
         if isinstance(user_info, int) or (isinstance(user_info, str) and str(user_info).isdigit()):
             vk_id = int(user_info)
-            label = duty_name
+            label = display_name
         elif isinstance(user_info, dict):
             vk_id = user_info.get("id")
-            label = user_info.get("label", duty_name)
+            label = user_info.get("label", display_name)
         else:
             self.logger.warning(f"Некорректный формат VK соответствия для '{duty_name}'")
-            return duty_name
+            return display_name
 
         if vk_id is None or not str(vk_id).lstrip("-").isdigit():
             self.logger.warning(f"Некорректный VK id для '{duty_name}': {vk_id}")
-            return duty_name
+            return display_name
 
         return f"[id{int(vk_id)}|{label}]"
 
