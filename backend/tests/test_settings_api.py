@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from pathlib import Path
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +14,7 @@ from duty_scheduler.settings_api import LOGIN_MAX_ATTEMPTS, settings_api_bp
 from duty_scheduler.settings_store import SECRET_PLACEHOLDER, SettingsStore
 
 from tests.helpers import make_config
+from tests.test_managed_files import service_account_key
 
 
 class FakeService:
@@ -170,6 +173,90 @@ class SettingsApiTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("часовой пояс", response.get_json()["error"])
         self.assertEqual(self.store.overrides(), {})
+
+    # ------------------------------------------------------------------
+    # Участники VK и ключ Google
+    # ------------------------------------------------------------------
+
+    def test_file_endpoints_require_authentication(self) -> None:
+        self.store.set_password("секрет123")
+
+        self.assertEqual(self.client.get("/api/settings/vk-users").status_code, 401)
+        self.assertEqual(self.client.post("/api/settings/vk-users", json={"users": []}).status_code, 401)
+        self.assertEqual(self.client.get("/api/settings/credentials").status_code, 401)
+        self.assertEqual(self.client.post("/api/settings/credentials", json={"content": "{}"}).status_code, 401)
+
+    def test_vk_users_are_created_from_scratch_and_read_back(self) -> None:
+        self.set_password()
+        path = self.project_root / "vk_users.json"
+        self.assertFalse(path.exists())
+
+        empty = self.client.get("/api/settings/vk-users").get_json()
+        self.assertEqual(empty["users"], [])
+        self.assertFalse(empty["file"]["exists"])
+
+        response = self.client.post(
+            "/api/settings/vk-users",
+            json={"users": [{"name": "Иван Иванов", "id": "101"}, {"name": "Пётр Петров", "id": 202, "label": "Пётр"}]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["file"]["exists"])
+        self.assertEqual(
+            json.loads(path.read_text(encoding="utf-8")),
+            {"Иван Иванов": 101, "Пётр Петров": {"id": 202, "label": "Пётр"}},
+        )
+
+    def test_vk_users_validation_error_keeps_the_file_untouched(self) -> None:
+        self.set_password()
+        path = self.project_root / "vk_users.json"
+        path.write_text(json.dumps({"Иван Иванов": 101}), encoding="utf-8")
+
+        response = self.client.post("/api/settings/vk-users", json={"users": [{"name": "Кто-то", "id": "abc"}]})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"Иван Иванов": 101})
+
+    def test_credentials_upload_creates_the_key_and_refreshes_the_schedule(self) -> None:
+        self.set_password()
+        path = self.project_root / "credentials.json"
+
+        before = self.client.get("/api/settings/credentials").get_json()["file"]
+        self.assertFalse(before["exists"])
+
+        response = self.client.post(
+            "/api/settings/credentials",
+            data={"file": (BytesIO(json.dumps(service_account_key()).encode("utf-8")), "key.json")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()["file"]
+        self.assertTrue(payload["exists"])
+        self.assertEqual(payload["client_email"], "duty@duty.iam.gserviceaccount.com")
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["type"], "service_account")
+
+    def test_existing_credentials_are_replaced_only_on_request(self) -> None:
+        self.set_password()
+        path = self.project_root / "credentials.json"
+        path.write_text(json.dumps(service_account_key(client_email="old@duty.iam.gserviceaccount.com")), encoding="utf-8")
+        new_key = json.dumps(service_account_key(client_email="new@duty.iam.gserviceaccount.com"))
+
+        refused = self.client.post("/api/settings/credentials", json={"content": new_key})
+        self.assertEqual(refused.status_code, 409)
+        self.assertIn("old@", path.read_text(encoding="utf-8"))
+
+        accepted = self.client.post("/api/settings/credentials", json={"content": new_key, "replace": True})
+        self.assertEqual(accepted.status_code, 200)
+        self.assertIn("new@", path.read_text(encoding="utf-8"))
+
+    def test_credentials_upload_rejects_a_file_that_is_not_a_key(self) -> None:
+        self.set_password()
+
+        response = self.client.post("/api/settings/credentials", json={"content": "{\"hello\": 1}"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse((self.project_root / "credentials.json").exists())
 
 
 if __name__ == "__main__":

@@ -14,6 +14,17 @@ class SettingsPage {
         this.logoutButton = document.getElementById("logout-button");
         this.reloadButton = document.getElementById("reload-button");
         this.changePasswordButton = document.getElementById("change-password-button");
+        this.filesSection = document.getElementById("files-section");
+        this.vkUsersStatus = document.getElementById("vk-users-status");
+        this.vkUsersList = document.getElementById("vk-users-list");
+        this.vkUsersAddButton = document.getElementById("vk-users-add");
+        this.vkUsersSaveButton = document.getElementById("vk-users-save");
+        this.credentialsStatus = document.getElementById("credentials-status");
+        this.credentialsForm = document.getElementById("credentials-form");
+        this.credentialsFileInput = document.getElementById("credentials-file");
+        this.credentialsUploadButton = document.getElementById("credentials-upload");
+        // Статус ключа с сервера: есть ли файл, можно ли его писать.
+        this.credentialsInfo = null;
 
         // "set" — пароль задаётся впервые, "change" — меняется, "login" — вход.
         this.authMode = "login";
@@ -23,6 +34,9 @@ class SettingsPage {
         this.logoutButton.addEventListener("click", () => this.onLogout());
         this.reloadButton.addEventListener("click", () => this.loadSettings());
         this.changePasswordButton.addEventListener("click", () => this.showAuth("change"));
+        this.vkUsersAddButton.addEventListener("click", () => this.onVkUserAdd());
+        this.vkUsersSaveButton.addEventListener("click", () => this.onVkUsersSave());
+        this.credentialsForm.addEventListener("submit", (event) => this.onCredentialsUpload(event));
 
         this.init();
     }
@@ -43,8 +57,9 @@ class SettingsPage {
 
     async request(url, options = {}) {
         try {
+            const isMultipart = options.body instanceof FormData;
             const response = await fetch(url, {
-                headers: { "Content-Type": "application/json" },
+                headers: isMultipart ? {} : { "Content-Type": "application/json" },
                 cache: "no-store",
                 ...options,
             });
@@ -91,6 +106,7 @@ class SettingsPage {
 
         this.authCard.hidden = false;
         this.settingsForm.hidden = true;
+        this.filesSection.hidden = true;
         this.logoutButton.hidden = mode !== "change";
         this.passwordInput.focus();
     }
@@ -141,7 +157,10 @@ class SettingsPage {
         this.renderGroups(result.body.groups || []);
         this.authCard.hidden = true;
         this.settingsForm.hidden = false;
+        this.filesSection.hidden = false;
         this.logoutButton.hidden = false;
+
+        await Promise.all([this.loadVkUsers(), this.loadCredentials()]);
     }
 
     renderGroups(groups) {
@@ -264,6 +283,208 @@ class SettingsPage {
             this.showMessage("Настройки сохранены и применены", "success");
         } finally {
             submitButton.disabled = false;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Участники VK
+    // ------------------------------------------------------------------
+
+    renderFileStatus(element, file, presentText, missingText) {
+        element.textContent = file.exists ? presentText : missingText;
+        element.className = file.exists ? "settings-file-status is-present" : "settings-file-status";
+        if (!file.writable) {
+            // Старый способ монтирования :ro — правки некуда сохранить.
+            element.textContent += ` Файл ${file.path} доступен только для чтения — изменения не сохранятся.`;
+            element.className = "settings-file-status is-readonly";
+        }
+        element.title = file.path;
+    }
+
+    async loadVkUsers() {
+        const result = await this.request("/api/settings/vk-users");
+        if (!result.ok) {
+            return;
+        }
+
+        const file = result.body.file || {};
+        this.renderFileStatus(
+            this.vkUsersStatus,
+            file,
+            `Файл ${file.path} загружен.`,
+            "Файла ещё нет — он создастся при первом сохранении.",
+        );
+        this.vkUsersAddButton.disabled = !file.writable;
+        this.vkUsersSaveButton.disabled = !file.writable;
+        this.renderVkUsers(result.body.users || []);
+    }
+
+    renderVkUsers(users) {
+        this.vkUsersList.innerHTML = "";
+
+        if (users.length === 0) {
+            const empty = document.createElement("p");
+            empty.className = "settings-users-empty";
+            empty.textContent = "Список пуст: дежурные пойдут в уведомления без упоминаний.";
+            this.vkUsersList.appendChild(empty);
+            return;
+        }
+
+        const header = document.createElement("div");
+        header.className = "settings-users-row is-header";
+        ["Имя как в таблице", "VK id", "Подпись (необязательно)", ""].forEach((text) => {
+            const cell = document.createElement("span");
+            cell.textContent = text;
+            header.appendChild(cell);
+        });
+        this.vkUsersList.appendChild(header);
+
+        users.forEach((user) => this.vkUsersList.appendChild(this.renderVkUserRow(user)));
+    }
+
+    renderVkUserRow(user) {
+        const row = document.createElement("div");
+        row.className = "settings-users-row";
+
+        const fields = [
+            ["name", "Фамилия Имя", user.name],
+            ["id", "123456789", user.id],
+            ["label", "Как обратиться", user.label],
+        ];
+        fields.forEach(([key, placeholder, value]) => {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.dataset.userField = key;
+            input.placeholder = placeholder;
+            input.value = value === null || value === undefined ? "" : String(value);
+            input.autocomplete = "off";
+            if (key === "id") {
+                input.inputMode = "numeric";
+            }
+            row.appendChild(input);
+        });
+
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "settings-button ghost settings-users-remove";
+        remove.textContent = "\u00d7";
+        remove.title = "Убрать из списка";
+        remove.addEventListener("click", () => {
+            row.remove();
+            if (!this.vkUsersList.querySelector(".settings-users-row:not(.is-header)")) {
+                this.renderVkUsers([]);
+            }
+        });
+        row.appendChild(remove);
+
+        return row;
+    }
+
+    collectVkUsers() {
+        return Array.from(this.vkUsersList.querySelectorAll(".settings-users-row:not(.is-header)")).map((row) => {
+            const user = {};
+            row.querySelectorAll("[data-user-field]").forEach((input) => {
+                user[input.dataset.userField] = input.value;
+            });
+            return user;
+        });
+    }
+
+    onVkUserAdd() {
+        const users = this.collectVkUsers();
+        users.push({ name: "", id: "", label: "" });
+        this.renderVkUsers(users);
+
+        const rows = this.vkUsersList.querySelectorAll(".settings-users-row:not(.is-header)");
+        rows[rows.length - 1].querySelector("input").focus();
+    }
+
+    async onVkUsersSave() {
+        this.clearMessage();
+        this.vkUsersSaveButton.disabled = true;
+        try {
+            const result = await this.request("/api/settings/vk-users", {
+                method: "POST",
+                body: JSON.stringify({ users: this.collectVkUsers() }),
+            });
+
+            if (result.status === 401) {
+                this.showAuth("login");
+                return;
+            }
+            if (!result.ok) {
+                return;
+            }
+
+            await this.loadVkUsers();
+            this.showMessage("Список участников VK сохранён", "success");
+        } finally {
+            this.vkUsersSaveButton.disabled = false;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Ключ Google
+    // ------------------------------------------------------------------
+
+    async loadCredentials() {
+        const result = await this.request("/api/settings/credentials");
+        if (!result.ok) {
+            return;
+        }
+
+        const file = result.body.file || {};
+        this.credentialsInfo = file;
+        const present = file.error
+            ? `Ключ есть, но ${file.error}. Загрузите файл заново.`
+            : `Ключ загружен: ${file.client_email || "e-mail не указан"}.`;
+        this.renderFileStatus(
+            this.credentialsStatus,
+            file,
+            present,
+            "Ключа нет — без него таблица не читается. Загрузите JSON-файл сервисного аккаунта.",
+        );
+        this.credentialsUploadButton.textContent = file.exists ? "Заменить ключ" : "Загрузить";
+        this.credentialsUploadButton.disabled = !file.writable;
+        this.credentialsFileInput.disabled = !file.writable;
+        this.credentialsFileInput.value = "";
+    }
+
+    async onCredentialsUpload(event) {
+        event.preventDefault();
+        this.clearMessage();
+
+        const file = this.credentialsFileInput.files[0];
+        if (!file) {
+            this.showMessage("Выберите файл ключа", "error");
+            return;
+        }
+
+        const replace = Boolean(this.credentialsInfo && this.credentialsInfo.exists);
+        if (replace && !window.confirm("Заменить текущий ключ? Старый доступ к таблице перестанет работать.")) {
+            return;
+        }
+
+        const form = new FormData();
+        form.append("file", file);
+        form.append("replace", replace ? "1" : "0");
+
+        this.credentialsUploadButton.disabled = true;
+        try {
+            const result = await this.request("/api/settings/credentials", { method: "POST", body: form });
+
+            if (result.status === 401) {
+                this.showAuth("login");
+                return;
+            }
+            if (!result.ok) {
+                return;
+            }
+
+            await this.loadCredentials();
+            this.showMessage("Ключ загружен, таблица будет прочитана заново", "success");
+        } finally {
+            this.credentialsUploadButton.disabled = false;
         }
     }
 }

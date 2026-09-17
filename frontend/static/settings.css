@@ -89,7 +89,9 @@ body.settings-page {
 
 .settings-field input[type="text"],
 .settings-field input[type="password"],
-.settings-field select {
+.settings-field input[type="file"],
+.settings-field select,
+.settings-users-row input {
     width: 100%;
     padding: 10px 12px;
     border-radius: 12px;
@@ -102,7 +104,8 @@ body.settings-page {
 }
 
 .settings-field input:focus,
-.settings-field select:focus {
+.settings-field select:focus,
+.settings-users-row input:focus {
     outline: none;
     border-color: rgba(163, 213, 255, 0.7);
     box-shadow: 0 0 0 3px rgba(67, 137, 250, 0.25);
@@ -217,6 +220,73 @@ body.settings-page {
     line-height: 1.5;
 }
 
+/* Файлы, которыми управляет страница: участники VK и ключ Google. */
+
+.settings-file-status {
+    margin: 0 0 14px;
+    font-size: 0.88em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.settings-file-status.is-present {
+    color: rgba(200, 228, 255, 0.9);
+}
+
+.settings-file-status.is-readonly {
+    color: rgba(255, 200, 150, 0.95);
+}
+
+.settings-field input[type="file"] {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.settings-field input[type="file"]::file-selector-button {
+    margin-right: 12px;
+    padding: 4px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.settings-users {
+    margin-bottom: 14px;
+}
+
+.settings-users-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.settings-users-row.is-header {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 4px;
+}
+
+.settings-users-row input {
+    padding: 8px 10px;
+    font-size: 0.95em;
+}
+
+.settings-users-remove {
+    padding: 6px 12px;
+    line-height: 1;
+    font-size: 1.1em;
+}
+
+.settings-users-empty {
+    margin: 0 0 4px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
 @media (max-width: 560px) {
     .settings-shell {
         padding: 20px 14px 48px;
@@ -224,5 +294,20 @@ body.settings-page {
 
     .settings-card {
         padding: 18px 16px;
+    }
+
+    /* На телефоне поля строки идут столбиком, кнопка удаления — под ними. */
+    .settings-users-row {
+        grid-template-columns: 1fr;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .settings-users-row.is-header {
+        display: none;
+    }
+
+    .settings-users-remove {
+        justify-self: end;
     }
 }

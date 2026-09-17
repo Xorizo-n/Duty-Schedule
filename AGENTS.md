@@ -51,8 +51,9 @@ Docker: `./deploy.sh` (интерактивно создаёт `.env`, пров�
 ```
 backend/     весь Python: приложение, точки входа, тесты, зависимости
 frontend/    templates/ + static/, сборки нет (vanilla JS + Bootstrap с CDN)
-корень       Dockerfile, docker-compose.yml, deploy.sh + credentials.json,
-             .env, vk_users.json (в git не хранятся, монтируются томами)
+корень       Dockerfile, docker-compose.yml, deploy.sh + .env (в git не хранится);
+             credentials.json и vk_users.json локально лежат тут же, а в
+             контейнере — на томе duty_settings, см. §7
 ```
 
 | Путь | Роль |
@@ -64,6 +65,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS + Bootstrap �
 | `backend/duty_scheduler/api.py` | Blueprint `api`: `/api/data`, `/api/health`, `/health`, `/version` |
 | `backend/duty_scheduler/settings_api.py` | Blueprint `settings_api`: `/api/settings*`, пароль и сессия |
 | `backend/duty_scheduler/settings_store.py` | `SettingsStore` — JSON-файл настроек, пароль, ключ сессий; описание полей формы |
+| `backend/duty_scheduler/managed_files.py` | Чтение/запись `vk_users.json` и `credentials.json` со страницы настроек |
 | `backend/duty_scheduler/runtime.py` | `apply_runtime_config()` — пересборка конфига на живом приложении |
 | `backend/duty_scheduler/views.py` | Blueprint `views`: `/` → `index.html`, `/settings` → `settings.html` |
 | `backend/duty_scheduler/logging_utils.py` | Root-логгер: консоль + `RotatingFileHandler` (10 МБ × 5) |
@@ -72,7 +74,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS + Bootstrap �
 | `backend/serve.py` | Кроссплатформенный лаунчер (waitress / gunicorn) |
 | `backend/container_start.py` | Entrypoint контейнера: `chown` логов → сброс прав на `appuser` → gunicorn |
 | `backend/requirements.txt` | Зависимости Python |
-| `backend/tests/` | `unittest`, 62 теста, без сети |
+| `backend/tests/` | `unittest`, 80 тестов, без сети |
 | `frontend/templates/index.html`, `frontend/static/{app.js,style.css}` | Табло |
 | `frontend/templates/settings.html`, `frontend/static/{settings.js,settings.css}` | Страница настроек |
 | `animations_examples/` | Сторонние CSS-примеры-референсы. **Не часть приложения**, в образ не копируются |
@@ -233,6 +235,8 @@ _background_updater (поток, tick = 10 c)
 | `POST /api/settings/password` | задать пароль (первый раз) или сменить (`current_password`) |
 | `POST /api/settings/login`, `POST /api/settings/logout` | вход и выход |
 | `GET /api/settings`, `POST /api/settings` | чтение и запись значений, требуют входа |
+| `GET /api/settings/vk-users`, `POST /api/settings/vk-users` | список участников VK и его замена целиком, требуют входа |
+| `GET /api/settings/credentials`, `POST /api/settings/credentials` | статус ключа Google (без содержимого) и загрузка файла, требуют входа |
 
 `data` из `/api/data`:
 
@@ -297,7 +301,8 @@ _background_updater (поток, tick = 10 c)
 
 `vk_users.json` — маппинг «ФИО → VK id» для упоминаний. Два формата значения:
 `"Иван Иванов": 101` или `"Пётр Петров": {"id": 202, "label": "Пётр"}`. Нет записи —
-в сообщение уйдёт голое имя + warning в лог.
+в сообщение уйдёт голое имя + warning в лог. Файл читается заново на каждое
+сообщение и редактируется со страницы `/settings` (§7).
 
 `split_duty_names()` разбивает ячейку на несколько человек: по запятой; если
 запятых нет — по отчествам; если и их нет — по парам слов при чётном количестве
@@ -377,12 +382,12 @@ query string, поэтому токен не оседает в логах про
 
 8. **Четверо из графика не сопоставлены с VK id** (Афонин Кирилл Борисович,
    Назаров Михаил Владимирович, Удочкин Сергей Юрьевич, «Юрчик») — в
-   уведомлениях они пойдут обычным текстом без упоминания. Лечится дополнением
-   `vk_users.json`.
+   уведомлениях они пойдут обычным текстом без упоминания. Лечится в блоке
+   «Участники VK» на `/settings`.
 
-9. **`credentials.json`, `.env`, `vk_users.json` не в git** (см. `.gitignore`) и
-   лежат только локально. Никогда не коммитьте их и не выводите содержимое в
-   логи или ответы.
+9. **`credentials.json`, `.env`, `vk_users.json`, `settings.json` не в git** (см.
+   `.gitignore`) и лежат только локально или на сервере. Никогда не коммитьте
+   их и не выводите содержимое в логи или ответы.
 
 ---
 
@@ -401,9 +406,10 @@ Watchtower не читает `docker-compose.yml` и замораживает en
 
 Что редактируется — список `SETTING_FIELDS` в
 [settings_store.py](backend/duty_scheduler/settings_store.py). Инфраструктурное
-(`LOG_DIR`, `FRONTEND_DIR`, пути к `credentials.json` и `vk_users.json`) там
-намеренно отсутствует: это про то, как контейнер собран, а не про то, как
-приложение работает.
+(`LOG_DIR`, `FRONTEND_DIR`, `SETTINGS_FILE`, пути к `credentials.json` и
+`vk_users.json`) там намеренно отсутствует: это про то, как контейнер собран, а
+не про то, как приложение работает. Содержимое самих `credentials.json` и
+`vk_users.json` при этом редактируется — см. ниже.
 
 Применение идёт без перезапуска: `apply_runtime_config()` пересобирает
 `AppConfig` и раздаёт его сервисам, а оба фоновых цикла читают `self.config` на
@@ -422,12 +428,45 @@ Watchtower не читает `docker-compose.yml` и замораживает en
 Токен VK наружу не отдаётся: в форму уходит плейсхолдер `********`, и он же
 понимается при сохранении как «секрет не меняли».
 
+### Файлы под управлением страницы: `vk_users.json` и `credentials.json`
+
+Ниже формы — два блока, которые правят не значения, а файлы
+([managed_files.py](backend/duty_scheduler/managed_files.py)):
+
+* **Участники VK** — таблица «имя / VK id / подпись». Сохраняется списком
+  целиком в `VK_USERS_FILE`; файл создаётся, если его не было. Формат тот же,
+  что читает `VkNotifier`: без подписи — `"имя": id`, с подписью — объект.
+  Валидация: имя непустое и уникальное без учёта регистра, id — положительное
+  число. Применяется мгновенно — нотифаер читает файл на каждое сообщение.
+* **Ключ сервисного аккаунта Google** — загрузка JSON-ключа в
+  `GOOGLE_CREDENTIALS_FILE`. Принимается только `"type": "service_account"` с
+  `client_email`, `private_key`, `token_uri`; файл пишется с правами `0600`.
+  Наружу уходит только признак наличия и `client_email` — чтобы было видно,
+  кому открывать таблицу. Если ключ уже есть, замена требует явного `replace`
+  (на странице — подтверждение). После загрузки запускается внеочередное
+  чтение таблицы.
+
+Оба блока показывают, доступен ли файл на запись. В контейнере файлы лежат на
+томе `duty_settings` (`/app/data/`, пути захардкожены в `docker-compose.yml`)
+рядом с `settings.json`. Старый compose с `:ro`-монтированием с хоста тоже
+работает — страница честно скажет, что файл только для чтения.
+
+Первичное наполнение тома на сервере: `deploy.sh` после старта копирует
+`credentials.json` и `vk_users.json` из своего каталога в том, **только если
+там их ещё нет** — том источник правды, правки с `/settings` не затираются.
+Вручную то же самое:
+
+```bash
+docker cp credentials.json duty-schedule-app:/app/data/credentials.json
+docker exec duty-schedule-app chown appuser:appuser /app/data/credentials.json
+```
+
 ### Переменные окружения
 
 | Переменная | Дефолт | Комментарий |
 |---|---|---|
 | `GOOGLE_SHEET_URL` | — | Без неё приложение поднимется, но `/api/data` вернёт ошибку: ссылку надо задать в `/settings` |
-| `GOOGLE_CREDENTIALS_FILE` | `credentials.json` | Путь относительно корня репозитория |
+| `GOOGLE_CREDENTIALS_FILE` | `credentials.json` | Относительный — от корня репозитория; в контейнере `/app/data/credentials.json` |
 | `DUTY_SHEET_GID` | `1262048925` | gid листа с графиком. Пустая строка → искать только по имени |
 | `DUTY_SHEET_NAME` | `Новое Дежуство` | Фолбэк-поиск по имени, если лист с gid не найден |
 | `FRONTEND_DIR` | `<корень>/frontend` | Каталог с `templates/` и `static/` |
@@ -435,7 +474,7 @@ Watchtower не читает `docker-compose.yml` и замораживает en
 | `TZ` | — | Только для системного времени контейнера; на Windows см. §6.2 |
 | `VK_BOT_TOKEN`, `VK_PEER_ID` | — | Пусто → уведомления отключены |
 | `VK_API_VERSION` | `5.199` | |
-| `VK_USERS_FILE` | `vk_users.json` | |
+| `VK_USERS_FILE` | `vk_users.json` | В контейнере `/app/data/vk_users.json` |
 | `VK_COMMANDS_ENABLED` | `1` | Кнопки и ответы бота. `0` → только рассылка уведомлений |
 | `VK_GROUP_ID` | — | Обычно определяется по токену; задавать только если не определился |
 | `SETTINGS_FILE` | `<корень>/settings.json` | В контейнере — `/app/data/settings.json` |
@@ -481,7 +520,11 @@ Google-таблица, но при добавлении новых полей э
 
 Отдельный класс `SettingsPage` в [settings.js](frontend/static/settings.js),
 форма целиком строится из ответа `/api/settings` — добавили поле в
-`SETTING_FIELDS`, оно само появилось в интерфейсе.
+`SETTING_FIELDS`, оно само появилось в интерфейсе. Блоки «Участники VK» и
+«Ключ Google» — статичная разметка в `settings.html` (`#files-section`),
+показывается вместе с формой после входа; список участников рендерится
+DOM-методами, без `innerHTML` с данными. Загрузка ключа — `FormData`, поэтому
+`request()` не ставит JSON-заголовок для multipart-тела.
 
 `settings.css` подключается **после** `style.css` и переопределяет ровно то, что
 в нём заточено под киоск: прокрутку и скрытый курсор. `overflow` там именно
@@ -493,7 +536,7 @@ Google-таблица, но при добавлении новых полей э
 
 ## 9. Тесты
 
-`unittest`, 62 теста, сеть не трогают: `backend/tests/helpers.py::make_config` даёт
+`unittest`, 80 тестов, сеть не трогают: `backend/tests/helpers.py::make_config` даёт
 конфиг на `tempfile`, Google Sheets и VK замоканы.
 
 ```bash
@@ -511,7 +554,8 @@ Google-таблица, но при добавлении новых полей э
 ячейки на нескольких человек; субботняя ветка `check_upcoming_duties`; клавиатура
 и разбор команд VK, тексты ответов и отсев чужих бесед; валидация и хранение
 настроек; вход, блокировка после неудачных попыток и маскировка токена в
-`/api/settings`.
+`/api/settings`; чтение, валидация и запись `vk_users.json`; проверка и
+загрузка ключа Google, отказ заменять существующий без `replace`.
 
 Что **не** покрыто и требует ручной проверки: `open_duty_worksheet` (сеть),
 NTP-фолбэк, `get_two_work_weeks` на границе недели и воскресенье, весь фронтенд,
@@ -591,11 +635,11 @@ NTP-фолбэк, `get_two_work_weeks` на границе недели и во�
 сервере**.
 
 * `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` — GitHub Secrets, нужны только CI.
-* `credentials.json`, `.env`, `vk_users.json` — только на сервере, монтируются
-  томами `:ro` из [docker-compose.yml](docker-compose.yml).
-* `settings.json` — пишется самим приложением на именованный том
-  `duty_settings`, содержит хеш пароля, ключ подписи сессий и токен VK. В git
-  не попадает (`.gitignore` ловит его правилом `*.json`), в образ — тоже
+* `.env` — только на сервере, читается compose'ом.
+* `settings.json`, `credentials.json`, `vk_users.json` — на именованном томе
+  `duty_settings` (`/app/data`), пишутся самим приложением через `/settings`
+  (§7). `settings.json` содержит хеш пароля, ключ подписи сессий и токен VK.
+  В git не попадают (`.gitignore` ловит их правилом `*.json`), в образ — тоже
   (`.dockerignore`).
 
 Ни один из них никогда не попадал в git (проверено `git log --all` по каждому
@@ -614,8 +658,8 @@ technически означало бы «опубликовать ключ».
 Watchtower не читает `docker-compose.yml`. Он забирает новый образ и пересоздает
 контейнер, копируя конфиг со старого. Отсюда:
 
-* **файлы-тома** (`credentials.json`, `vk_users.json`) обновляются нормально —
-  содержимое читается с диска;
+* **именованные тома** (`duty_settings`, `duty_logs`) переезжают в новый
+  контейнер как есть;
 * **переменные окружения замораживаются** на значениях последнего
   `docker compose up -d`. Правка `.env` сама по себе не применится.
 
@@ -632,11 +676,12 @@ watchtower сам том не добавит.
 
 ## 13. Текущее состояние
 
-Ветка `vk-buttons-and-settings` поверх `cd8bc21` (v2.3.0): кнопки VK-бота и
-ответы на команды через Bots Long Poll, сокращение имён в сообщениях до
-«Фамилия Имя», страница `/settings` с паролем и файлом настроек, том
-`duty_settings` под него. Каждый коммит проходит тесты по отдельности —
-история бисектится.
+Ветка `vk-buttons-and-settings` поверх `cd8bc21` (v2.3.0), релиз 2.4.0: кнопки
+VK-бота и ответы на команды через Bots Long Poll, сокращение имён в сообщениях
+до «Фамилия Имя», страница `/settings` с паролем и файлом настроек, том
+`duty_settings` под него, редактирование `vk_users.json` и загрузка
+`credentials.json` с той же страницы. Каждый коммит проходит тесты по
+отдельности — история бисектится.
 
 Пуш в `main` равен деплою в прод (§11), поэтому мержить стоит осознанно.
 
@@ -649,6 +694,9 @@ watchtower сам том не добавит.
 * **Образ локально не собирался** — Docker на машине разработки отсутствует.
   Проверялись пути, локальный запуск, страница настроек в браузере и тесты.
 * **Первый деплой требует `docker compose up -d` на сервере**: watchtower не
-  добавит том `duty_settings` сам (§12).
-* `.env` и `vk_users.json` не тронуты: env остаётся источником дефолтов, и всё
-  продолжает работать до того, как в настройках что-то зададут.
+  добавит том `duty_settings` сам (§12). Bind-mount'ов `credentials.json` и
+  `vk_users.json` в compose больше нет — после `up -d` их надо один раз
+  положить в том: `./deploy.sh` делает это сам, либо `docker cp` (§7), либо
+  загрузка через `/settings`. Пока ключа нет, `/api/data` отдаёт ошибку.
+* `.env` не тронут: env остаётся источником дефолтов, и всё продолжает
+  работать до того, как в настройках что-то зададут.

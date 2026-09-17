@@ -53,6 +53,40 @@
                 пересоздание контейнера. Изменения применяются сразу, перезапуск не нужен.
             </p>
         </form>
+
+        <div id="files-section" hidden>
+            <section class="settings-card glass-effect">
+                <h2>Участники VK</h2>
+                <p class="settings-hint">
+                    Кого упоминать в напоминаниях: имя как в таблице (можно «Фамилия Имя»),
+                    числовой id ВКонтакте и, по желанию, подпись вместо имени.
+                </p>
+                <p class="settings-file-status" id="vk-users-status"></p>
+                <div class="settings-users" id="vk-users-list"></div>
+                <div class="settings-actions">
+                    <button type="button" class="settings-button ghost" id="vk-users-add">Добавить</button>
+                    <button type="button" class="settings-button" id="vk-users-save">Сохранить список</button>
+                </div>
+            </section>
+
+            <section class="settings-card glass-effect">
+                <h2>Ключ сервисного аккаунта Google</h2>
+                <p class="settings-hint">
+                    JSON-ключ, скачанный из Google Cloud Console. Таблицу нужно открыть
+                    на чтение для e-mail этого аккаунта.
+                </p>
+                <p class="settings-file-status" id="credentials-status"></p>
+                <form id="credentials-form">
+                    <label class="settings-field">
+                        <span class="settings-label">Файл ключа</span>
+                        <input type="file" id="credentials-file" accept=".json,application/json">
+                    </label>
+                    <div class="settings-actions">
+                        <button type="submit" class="settings-button" id="credentials-upload">Загрузить</button>
+                    </div>
+                </form>
+            </section>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='settings.js') }}?v={{ version }}"></script>

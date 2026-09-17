@@ -12,6 +12,16 @@ import time
 
 from flask import Blueprint, current_app, jsonify, request, session
 
+from .managed_files import (
+    describe_credentials,
+    describe_path,
+    read_vk_users,
+    resolve_path,
+    validate_credentials,
+    validate_vk_users,
+    write_credentials,
+    write_vk_users,
+)
 from .runtime import apply_runtime_config, refresh_schedule_async
 from .settings_store import (
     SECRET_PLACEHOLDER,
@@ -201,3 +211,99 @@ def settings_write():
     current_app.extensions["logger"].info("Настройки обновлены через /settings")
 
     return jsonify({"success": True, "groups": describe_settings()})
+
+
+# ----------------------------------------------------------------------
+# Файлы: участники VK и ключ Google
+# ----------------------------------------------------------------------
+
+def vk_users_path():
+    config = current_app.extensions["config"]
+    return resolve_path(config.project_root, config.vk_users_file)
+
+
+def credentials_path():
+    config = current_app.extensions["config"]
+    return resolve_path(config.project_root, config.credentials_file)
+
+
+def describe_vk_users() -> dict:
+    path = vk_users_path()
+    return {"success": True, "file": describe_path(path), "users": read_vk_users(path)}
+
+
+@settings_api_bp.route("/api/settings/vk-users")
+def vk_users_read():
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Требуется вход"}), 401
+    try:
+        return jsonify(describe_vk_users())
+    except SettingsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+
+@settings_api_bp.route("/api/settings/vk-users", methods=["POST"])
+def vk_users_write():
+    """Заменяет список целиком: форма присылает всё, что в ней видно."""
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Требуется вход"}), 401
+
+    path = vk_users_path()
+    try:
+        mapping = validate_vk_users(json_body().get("users"))
+        write_vk_users(path, mapping)
+    except SettingsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except OSError as exc:
+        return jsonify({"success": False, "error": f"Не удалось записать {path}: {exc}"}), 500
+
+    # Файл читается заново на каждое сообщение — перезапуск не нужен.
+    current_app.extensions["logger"].info(
+        f"Список участников VK обновлён через /settings: {len(mapping)} чел."
+    )
+    return jsonify(describe_vk_users())
+
+
+@settings_api_bp.route("/api/settings/credentials")
+def credentials_read():
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Требуется вход"}), 401
+    return jsonify({"success": True, "file": describe_credentials(credentials_path())})
+
+
+@settings_api_bp.route("/api/settings/credentials", methods=["POST"])
+def credentials_write():
+    """Загрузка ключа: multipart-поле `file` или JSON `{content}`.
+
+    Существующий ключ перезаписывается только с явным `replace`, чтобы
+    случайный клик не подменил рабочий доступ к таблице.
+    """
+    if not is_authenticated():
+        return jsonify({"success": False, "error": "Требуется вход"}), 401
+
+    path = credentials_path()
+    upload = request.files.get("file")
+    if upload is not None:
+        content = upload.read()
+        replace = request.form.get("replace", "").strip().casefold() in {"1", "true", "yes", "on"}
+    else:
+        body = json_body()
+        content = str(body.get("content") or "").encode("utf-8")
+        replace = bool(body.get("replace"))
+
+    if path.is_file() and not replace:
+        return jsonify({"success": False, "error": "Ключ уже загружен. Чтобы заменить, подтвердите замену"}), 409
+
+    try:
+        text = validate_credentials(content)
+        write_credentials(path, text)
+    except SettingsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except OSError as exc:
+        return jsonify({"success": False, "error": f"Не удалось записать {path}: {exc}"}), 500
+
+    # Клиент Google создаётся на каждое обновление, так что новый ключ
+    # подхватится первым же походом в таблицу — запускаем его сразу.
+    refresh_schedule_async(current_app._get_current_object())
+    current_app.extensions["logger"].info("Ключ сервисного аккаунта Google загружен через /settings")
+    return jsonify({"success": True, "file": describe_credentials(path)})

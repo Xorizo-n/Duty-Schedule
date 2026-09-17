@@ -35,22 +35,18 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 echo -e "${GREEN}✅ Используется команда: $DOCKER_COMPOSE_CMD${NC}"
 
+# Ключ Google и участники VK живут на томе duty_settings (/app/data) и
+# загружаются через страницу /settings. Файлы рядом со скриптом — только
+# первичное наполнение тома: если он ещё пуст, они копируются туда после старта.
 if [ ! -f "credentials.json" ]; then
-    echo -e "${RED}❌ Файл credentials.json не найден${NC}"
+    echo -e "${YELLOW}⚠️ Файл credentials.json рядом со скриптом не найден${NC}"
+    echo "   Ключ сервисного аккаунта можно загрузить после запуска на странице /settings."
     echo ""
-    echo -e "${YELLOW}📋 Инструкция по настройке Google Sheets API:${NC}"
-    echo "1. Перейдите в Google Cloud Console: https://console.cloud.google.com"
-    echo "2. Создайте новый проект или выберите существующий"
-    echo "3. Включите Google Sheets API"
-    echo "4. Создайте сервисный аккаунт"
-    echo "5. Сгенерируйте JSON ключи"
-    echo "6. Переименуйте скачанный файл в credentials.json"
-    echo "7. Скопируйте его в эту папку"
+    echo -e "${YELLOW}📋 Как получить ключ:${NC}"
+    echo "1. Google Cloud Console: https://console.cloud.google.com"
+    echo "2. Включите Google Sheets API, создайте сервисный аккаунт"
+    echo "3. Сгенерируйте JSON-ключ и откройте таблицу на чтение для e-mail аккаунта"
     echo ""
-    echo -e "${YELLOW}💡 Важно:${NC}"
-    echo "- Предоставьте доступ к таблице для email сервисного аккаунта"
-    echo "- Лист с графиком задается через DUTY_SHEET_GID (по умолчанию 1262048925)"
-    exit 1
 fi
 
 ensure_env_var() {
@@ -82,7 +78,6 @@ if [ ! -f ".env" ]; then
     cat > .env <<EOF
 # Конфигурация Google Sheets
 GOOGLE_SHEET_URL=$google_url
-GOOGLE_CREDENTIALS_FILE=credentials.json
 DUTY_SHEET_GID=1262048925
 DUTY_SHEET_NAME=Новое Дежуство
 
@@ -94,7 +89,6 @@ SERVER_TIMEZONE=Asia/Yekaterinburg
 VK_BOT_TOKEN=
 VK_PEER_ID=
 VK_API_VERSION=5.199
-VK_USERS_FILE=vk_users.json
 
 # Логирование
 CONSOLE_LOG_LEVEL=INFO
@@ -110,13 +104,11 @@ else
     echo -e "${GREEN}✅ Файл .env уже существует, проверяю обязательные переменные${NC}"
 fi
 
-ensure_env_var "GOOGLE_CREDENTIALS_FILE" "credentials.json"
 ensure_env_var "DUTY_SHEET_GID" "1262048925"
 ensure_env_var "DUTY_SHEET_NAME" "Новое Дежуство"
 ensure_env_var "TZ" "Asia/Yekaterinburg"
 ensure_env_var "SERVER_TIMEZONE" "Asia/Yekaterinburg"
 ensure_env_var "VK_API_VERSION" "5.199"
-ensure_env_var "VK_USERS_FILE" "vk_users.json"
 ensure_env_var "CONSOLE_LOG_LEVEL" "INFO"
 ensure_env_var "FILE_LOG_LEVEL" "WARNING"
 ensure_env_var "LOG_DIR" "/app/logs"
@@ -128,17 +120,8 @@ if ! grep -Eq "^GOOGLE_SHEET_URL=" .env; then
     exit 1
 fi
 
-if [ ! -f "vk_users.json" ]; then
-    echo -e "${YELLOW}📄 Файл vk_users.json не найден, создаю шаблон${NC}"
-    cat > vk_users.json <<'EOF'
-{
-  "Иван Иванов": 123456789
-}
-EOF
-fi
-
 echo -e "${YELLOW}📝 Активные настройки .env:${NC}"
-grep -E '^(GOOGLE_SHEET_URL|GOOGLE_CREDENTIALS_FILE|DUTY_SHEET_GID|DUTY_SHEET_NAME|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_USERS_FILE|VK_COMMANDS_ENABLED|VK_GROUP_ID|SETTINGS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL|LOG_DIR)=' .env
+grep -E '^(GOOGLE_SHEET_URL|DUTY_SHEET_GID|DUTY_SHEET_NAME|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_COMMANDS_ENABLED|VK_GROUP_ID|SETTINGS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL|LOG_DIR)=' .env
 echo ""
 
 if [ ! -f "$COMPOSE_FILE" ]; then
@@ -154,14 +137,14 @@ services:
       - "5000:5000"
     environment:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
-      - GOOGLE_CREDENTIALS_FILE=credentials.json
+      - GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json
       - DUTY_SHEET_GID=${DUTY_SHEET_GID:-1262048925}
       - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Новое Дежуство}
       - SERVER_TIMEZONE=Asia/Yekaterinburg
       - VK_BOT_TOKEN=${VK_BOT_TOKEN}
       - VK_PEER_ID=${VK_PEER_ID}
       - VK_API_VERSION=${VK_API_VERSION:-5.199}
-      - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
+      - VK_USERS_FILE=/app/data/vk_users.json
       - VK_COMMANDS_ENABLED=${VK_COMMANDS_ENABLED:-1}
       - VK_GROUP_ID=${VK_GROUP_ID:-}
       - SETTINGS_FILE=${SETTINGS_FILE:-/app/data/settings.json}
@@ -170,11 +153,12 @@ services:
       - LOG_DIR=${LOG_DIR:-/app/logs}
       - TZ=Asia/Yekaterinburg
     volumes:
-      - ./credentials.json:/app/credentials.json:ro
-      - ./vk_users.json:/app/vk_users.json:ro
       - duty_logs:/app/logs
-      # Настройки, заданные через /settings. Именованный том, а не bind-mount:
-      # файл пишет сам контейнер под appuser, права хоста тут только мешают.
+      # Настройки из /settings, ключ Google и участники VK. Именованный том,
+      # а не bind-mount: файлы пишет сам контейнер под appuser, права хоста
+      # тут только мешают, а bind-mount отсутствующего файла Docker молча
+      # превращает в каталог. Первичная загрузка — через /settings либо
+      # `docker cp` (см. deploy.sh).
       - duty_settings:/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
@@ -279,6 +263,32 @@ if [ "$READY" = true ]; then
 else
     echo -e "${YELLOW}⚠️ Приложение не ответило на /health за ${HEALTH_CHECK_TIMEOUT} сек${NC}"
 fi
+
+# Файл с хоста копируется в том только если там его ещё нет: том — источник
+# правды, его правят через /settings, и затирать эти правки нельзя.
+# `docker cp` вместо `compose cp`: работает и со старым docker-compose v1.
+seed_data_file() {
+    local name="$1"
+    local container="duty-schedule-app"
+    if [ ! -f "$name" ]; then
+        return
+    fi
+    if docker exec "$container" test -f "/app/data/$name" 2>/dev/null; then
+        echo -e "${GREEN}✅ /app/data/$name уже есть в томе, файл с хоста не трогаем${NC}"
+        return
+    fi
+    if docker cp "$name" "$container:/app/data/$name" \
+        && docker exec "$container" chown appuser:appuser "/app/data/$name"; then
+        echo -e "${GREEN}✅ $name скопирован в том duty_settings${NC}"
+    else
+        echo -e "${YELLOW}⚠️ Не удалось скопировать $name в контейнер — загрузите его через /settings${NC}"
+    fi
+}
+
+echo ""
+echo -e "${BLUE}📂 Первичное наполнение тома настроек...${NC}"
+seed_data_file "credentials.json"
+seed_data_file "vk_users.json"
 
 echo ""
 echo -e "${BLUE}🔍 Проверка статуса...${NC}"
