@@ -36,7 +36,7 @@ class SettingsApiTestCase(unittest.TestCase):
 
         app = Flask(__name__)
         app.secret_key = "test-secret"
-        app.config["APP_VERSION"] = "2.3.0"
+        app.config["APP_VERSION"] = "2.4.0"
         app.extensions["config"] = make_config(project_root=self.project_root)
         app.extensions["logger"] = logging.getLogger("settings-api-test")
         app.extensions["settings_store"] = self.store

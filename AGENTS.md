@@ -72,7 +72,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS + Bootstrap �
 | `backend/serve.py` | Кроссплатформенный лаунчер (waitress / gunicorn) |
 | `backend/container_start.py` | Entrypoint контейнера: `chown` логов → сброс прав на `appuser` → gunicorn |
 | `backend/requirements.txt` | Зависимости Python |
-| `backend/tests/` | `unittest`, 15 тестов, без сети |
+| `backend/tests/` | `unittest`, 62 теста, без сети |
 | `frontend/templates/index.html`, `frontend/static/{app.js,style.css}` | Табло |
 | `frontend/templates/settings.html`, `frontend/static/{settings.js,settings.css}` | Страница настроек |
 | `animations_examples/` | Сторонние CSS-примеры-референсы. **Не часть приложения**, в образ не копируются |
@@ -94,7 +94,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS + Bootstrap �
 умолчанию добавляет рабочий каталог в `sys.path`, поэтому `wsgi:app`
 резолвится. Не переносите точки входа из `backend/`, не поправив это.
 
-Версия приложения захардкожена: `AppConfig.app_version = "2.3.0"` в
+Версия приложения захардкожена: `AppConfig.app_version = "2.4.0"` в
 [config.py](backend/duty_scheduler/config.py). Она же прокидывается в `?v=` для
 cache-busting статики в [index.html](frontend/templates/index.html:10). При изменении
 фронтенда версию надо бампать, иначе на табло приедет старый CSS/JS.

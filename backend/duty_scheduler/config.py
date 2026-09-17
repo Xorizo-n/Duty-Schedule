@@ -105,6 +105,6 @@ def load_config(overrides: dict | None = None) -> AppConfig:
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
         vk_users_file=os.getenv("VK_USERS_FILE", "vk_users.json"),
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
-        app_version="2.3.0",
+        app_version="2.4.0",
         **values,
     )

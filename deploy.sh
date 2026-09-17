@@ -138,7 +138,7 @@ EOF
 fi
 
 echo -e "${YELLOW}📝 Активные настройки .env:${NC}"
-grep -E '^(GOOGLE_SHEET_URL|GOOGLE_CREDENTIALS_FILE|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_USERS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL|LOG_DIR)=' .env
+grep -E '^(GOOGLE_SHEET_URL|GOOGLE_CREDENTIALS_FILE|DUTY_SHEET_GID|DUTY_SHEET_NAME|TZ|SERVER_TIMEZONE|VK_PEER_ID|VK_API_VERSION|VK_USERS_FILE|VK_COMMANDS_ENABLED|VK_GROUP_ID|SETTINGS_FILE|CONSOLE_LOG_LEVEL|FILE_LOG_LEVEL|LOG_DIR)=' .env
 echo ""
 
 if [ ! -f "$COMPOSE_FILE" ]; then
@@ -155,11 +155,16 @@ services:
     environment:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=credentials.json
+      - DUTY_SHEET_GID=${DUTY_SHEET_GID:-1262048925}
+      - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Новое Дежуство}
       - SERVER_TIMEZONE=Asia/Yekaterinburg
       - VK_BOT_TOKEN=${VK_BOT_TOKEN}
       - VK_PEER_ID=${VK_PEER_ID}
       - VK_API_VERSION=${VK_API_VERSION:-5.199}
       - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
+      - VK_COMMANDS_ENABLED=${VK_COMMANDS_ENABLED:-1}
+      - VK_GROUP_ID=${VK_GROUP_ID:-}
+      - SETTINGS_FILE=${SETTINGS_FILE:-/app/data/settings.json}
       - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
       - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
       - LOG_DIR=${LOG_DIR:-/app/logs}
@@ -168,6 +173,9 @@ services:
       - ./credentials.json:/app/credentials.json:ro
       - ./vk_users.json:/app/vk_users.json:ro
       - duty_logs:/app/logs
+      # Настройки, заданные через /settings. Именованный том, а не bind-mount:
+      # файл пишет сам контейнер под appuser, права хоста тут только мешают.
+      - duty_settings:/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"
@@ -199,6 +207,7 @@ services:
 
 volumes:
   duty_logs:
+  duty_settings:
 EOF
     echo -e "${GREEN}✅ Файл $COMPOSE_FILE создан${NC}"
 else
