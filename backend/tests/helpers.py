@@ -18,6 +18,8 @@ def make_config(project_root: Path) -> AppConfig:
         vk_peer_id="123",
         vk_api_version="5.199",
         vk_users_file="vk_users.json",
+        vk_commands_enabled=True,
+        vk_group_id=None,
         console_log_level="INFO",
         file_log_level="WARNING",
         log_dir=str(project_root / "logs"),

@@ -1,0 +1,313 @@
+/* Страница настроек. Живёт поверх style.css и переопределяет ровно то, что
+   в нём заточено под киоск: табло не скроллится и прячет курсор, а форму,
+   наоборот, надо листать и мышью, и с телефона. */
+
+body.settings-page {
+    height: auto;
+    min-height: 100vh;
+    /* style.css запирает табло в 100vh без прокрутки — форме это не подходит.
+       Именно visible, а не auto: скроллить должен документ, иначе body
+       становится собственным скроллером со своей полосой прокрутки. */
+    overflow: visible;
+    cursor: auto;
+    -webkit-user-select: auto;
+    -moz-user-select: auto;
+    -ms-user-select: auto;
+    user-select: auto;
+    color: white;
+    /* Анимированных слоёв табло здесь нет намеренно: страницу настроек
+       открывают и подолгу держат, вечная CSS-анимация на фоне формы только
+       отвлекает. Тот же градиент, но спокойный. */
+    background: radial-gradient(circle at 50% 30%, var(--bg-primary) 0%, var(--bg-secondary) 55%, var(--bg-accent) 100%);
+}
+
+.settings-shell {
+    position: relative;
+    z-index: 1;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+}
+
+.settings-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.settings-header h1 {
+    margin: 0;
+    font-size: 2em;
+    font-weight: 600;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.settings-subtitle {
+    margin: 4px 0 0;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.95em;
+}
+
+.settings-header-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.settings-card {
+    border-radius: 18px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+}
+
+.settings-card h2 {
+    margin: 0 0 6px;
+    font-size: 1.25em;
+    font-weight: 600;
+}
+
+.settings-hint {
+    margin: 0 0 18px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 0.9em;
+}
+
+.settings-field {
+    display: block;
+    margin-bottom: 16px;
+}
+
+.settings-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="password"],
+.settings-field input[type="file"],
+.settings-field select,
+.settings-users-row input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(9, 20, 54, 0.45);
+    color: white;
+    font-size: 1em;
+    font-family: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-users-row input:focus {
+    outline: none;
+    border-color: rgba(163, 213, 255, 0.7);
+    box-shadow: 0 0 0 3px rgba(67, 137, 250, 0.25);
+}
+
+.settings-field select option {
+    /* Список раскрывается средствами ОС — там прозрачного фона не бывает. */
+    background: #132661;
+    color: white;
+}
+
+.settings-field-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 0.82em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-checkbox input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--bg-accent);
+}
+
+.settings-source {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 0.72em;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.settings-source.is-stored {
+    border-color: rgba(163, 213, 255, 0.45);
+    color: rgba(200, 228, 255, 0.9);
+}
+
+.settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.settings-button {
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(67, 137, 250, 0.45);
+    color: white;
+    font-size: 0.95em;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.settings-button:hover {
+    background: rgba(67, 137, 250, 0.65);
+    color: white;
+}
+
+.settings-button:active {
+    transform: translateY(1px);
+}
+
+.settings-button.ghost {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.settings-button.ghost:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.settings-button[disabled] {
+    opacity: 0.55;
+    cursor: default;
+}
+
+.settings-message {
+    border-radius: 14px;
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    font-size: 0.95em;
+    border: 1px solid transparent;
+}
+
+.settings-message.is-error {
+    background: rgba(180, 40, 60, 0.28);
+    border-color: rgba(255, 140, 160, 0.4);
+}
+
+.settings-message.is-success {
+    background: rgba(40, 140, 90, 0.26);
+    border-color: rgba(150, 240, 190, 0.4);
+}
+
+.settings-note {
+    margin: 18px 0 0;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1.5;
+}
+
+/* Файлы, которыми управляет страница: участники VK и ключ Google. */
+
+.settings-file-status {
+    margin: 0 0 14px;
+    font-size: 0.88em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.settings-file-status.is-present {
+    color: rgba(200, 228, 255, 0.9);
+}
+
+.settings-file-status.is-readonly {
+    color: rgba(255, 200, 150, 0.95);
+}
+
+.settings-field input[type="file"] {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.settings-field input[type="file"]::file-selector-button {
+    margin-right: 12px;
+    padding: 4px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: white;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.settings-users {
+    margin-bottom: 14px;
+}
+
+.settings-users-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.settings-users-row.is-header {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.55);
+    margin-bottom: 4px;
+}
+
+.settings-users-row input {
+    padding: 8px 10px;
+    font-size: 0.95em;
+}
+
+.settings-users-remove {
+    padding: 6px 12px;
+    line-height: 1;
+    font-size: 1.1em;
+}
+
+.settings-users-empty {
+    margin: 0 0 4px;
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+@media (max-width: 560px) {
+    .settings-shell {
+        padding: 20px 14px 48px;
+    }
+
+    .settings-card {
+        padding: 18px 16px;
+    }
+
+    /* На телефоне поля строки идут столбиком, кнопка удаления — под ними. */
+    .settings-users-row {
+        grid-template-columns: 1fr;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .settings-users-row.is-header {
+        display: none;
+    }
+
+    .settings-users-remove {
+        justify-self: end;
+    }
+}

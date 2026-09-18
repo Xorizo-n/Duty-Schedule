@@ -16,8 +16,10 @@ COPY frontend/ ./frontend/
 # они монтируются томами из docker-compose и отсечены в .dockerignore.
 
 # Создаем пользователя для безопасности
+# /app/data создаётся в образе, чтобы одноимённый том унаследовал владельца:
+# Docker копирует права каталога из образа только при создании нового тома.
 RUN useradd -m -u 1000 appuser \
-    && mkdir -p /app/logs \
+    && mkdir -p /app/logs /app/data \
     && chown -R appuser:appuser /app
 
 EXPOSE 5000

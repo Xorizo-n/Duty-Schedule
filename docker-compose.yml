@@ -8,22 +8,29 @@ services:
       - "5000:5000"
     environment:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
-      - GOOGLE_CREDENTIALS_FILE=credentials.json
+      - GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json
       - DUTY_SHEET_GID=${DUTY_SHEET_GID:-1262048925}
       - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Новое Дежуство}
       - SERVER_TIMEZONE=Asia/Yekaterinburg
       - VK_BOT_TOKEN=${VK_BOT_TOKEN}
       - VK_PEER_ID=${VK_PEER_ID}
       - VK_API_VERSION=${VK_API_VERSION:-5.199}
-      - VK_USERS_FILE=${VK_USERS_FILE:-vk_users.json}
+      - VK_USERS_FILE=/app/data/vk_users.json
+      - VK_COMMANDS_ENABLED=${VK_COMMANDS_ENABLED:-1}
+      - VK_GROUP_ID=${VK_GROUP_ID:-}
+      - SETTINGS_FILE=${SETTINGS_FILE:-/app/data/settings.json}
       - CONSOLE_LOG_LEVEL=${CONSOLE_LOG_LEVEL:-INFO}
       - FILE_LOG_LEVEL=${FILE_LOG_LEVEL:-WARNING}
       - LOG_DIR=${LOG_DIR:-/app/logs}
       - TZ=Asia/Yekaterinburg
     volumes:
-      - ./credentials.json:/app/credentials.json:ro
-      - ./vk_users.json:/app/vk_users.json:ro
       - duty_logs:/app/logs
+      # Настройки из /settings, ключ Google и участники VK. Именованный том,
+      # а не bind-mount: файлы пишет сам контейнер под appuser, права хоста
+      # тут только мешают, а bind-mount отсутствующего файла Docker молча
+      # превращает в каталог. Первичная загрузка — через /settings либо
+      # `docker cp` (см. deploy.sh).
+      - duty_settings:/app/data
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.scope=duty-schedule"
@@ -55,3 +62,4 @@ services:
 
 volumes:
   duty_logs:
+  duty_settings:
