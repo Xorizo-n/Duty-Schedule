@@ -37,6 +37,9 @@ class ScheduleService:
             "ntp_time": None,
             "ntp_last_sync": 0,
         }
+        # SwapService (swaps.py) — подставляется в create_app; тут без импорта,
+        # чтобы не было цикла: swaps.py сам зависит от этого модуля.
+        self.swap_service = None
 
     def start(self) -> None:
         with self.start_lock:
@@ -124,9 +127,10 @@ class ScheduleService:
 
     def get_google_sheets_client(self):
         try:
-            # Минимально необходимый доступ: только чтение таблиц.
-            # Полный scope drive дал бы сервисному аккаунту запись во весь Drive.
-            scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+            # Запись нужна подменам из VK-бота (см. swaps.py). Scope — только
+            # таблицы: полный drive дал бы сервисному аккаунту доступ ко всему Drive.
+            # Что именно можно менять, решает роль аккаунта в самой таблице.
+            scope = ["https://www.googleapis.com/auth/spreadsheets"]
             credentials_path = self.config.project_root / self.config.credentials_file
             if not credentials_path.exists():
                 self.logger.error(f"Файл учетных данных не найден: {credentials_path}")
@@ -220,6 +224,48 @@ class ScheduleService:
 
         return ", ".join(chunks)
 
+    @classmethod
+    def split_names(cls, value: str) -> list[str]:
+        """Разбивает ячейку на отдельных людей.
+
+        По запятой; если запятых нет — по отчествам; если и их нет — по парам
+        слов при чётном количестве слов > 2 («Иванов Иван Петров Пётр» → двое).
+        Эвристика ломается на одиночных фамилиях — учитывайте при правках.
+        """
+        normalized_name = cls.clean_name(value)
+        if not normalized_name:
+            return []
+
+        if "," in normalized_name:
+            return [part.strip() for part in normalized_name.split(",") if part.strip()]
+
+        words = normalized_name.split()
+
+        # ФИО с отчествами: "Иванов Иван Иванович Петров Петр Петрович" -> двое.
+        groups: list[str] = []
+        current: list[str] = []
+        for word in words:
+            current.append(word)
+            if len(current) >= 2 and PATRONYMIC_PATTERN.search(word):
+                groups.append(" ".join(current))
+                current = []
+        if groups and not current:
+            return groups
+
+        if len(words) > 2 and len(words) % 2 == 0:
+            return [" ".join(words[index:index + 2]) for index in range(0, len(words), 2)]
+
+        return [normalized_name]
+
+    @staticmethod
+    def person_key(name: str) -> str:
+        """Ключ для сравнения людей: «фамилия имя» в нижнем регистре.
+
+        В таблице полные ФИО, в vk_users.json — «Фамилия Имя»; сравниваем без
+        отчества, чтобы оба формата указывали на одного человека.
+        """
+        return " ".join(re.sub(r"\s+", " ", str(name)).strip().casefold().split()[:2])
+
     @staticmethod
     def get_weekday_name(date_obj: date) -> str:
         weekdays = {
@@ -251,6 +297,11 @@ class ScheduleService:
 
         Колонки со временем и справочные колонки отсеиваются сами собой: в строке
         дат у них пусто, поэтому такая колонка просто не попадает в разбор.
+
+        Кроме строк morning/evening у записи есть `slots` — по одному на
+        дежурного, с номером строки и колонки его ячейки (с единицы, как в
+        Google Sheets). По ним подмены пишут в таблицу; наружу в API они не
+        уходят. shift = morning / evening, а в субботу — saturday для обоих.
         """
         all_values = worksheet.get_all_values()
         reference_date = self.get_current_datetime().date()
@@ -277,8 +328,14 @@ class ScheduleService:
 
                 morning = self.clean_name(self._cell(morning_row, col_idx))
                 evening = self.clean_name(self._cell(evening_row, col_idx))
+                is_weekend = date_value.weekday() >= SATURDAY
+                # (смена, номер строки листа с единицы, дежурные из ячейки)
+                cells = [
+                    ("saturday" if is_weekend else "morning", row_idx + 2, morning),
+                    ("saturday" if is_weekend else "evening", row_idx + 3, evening),
+                ]
 
-                if date_value.weekday() >= SATURDAY:
+                if is_weekend:
                     # По субботам смена одна (с 8:00 до 16:00), но людей может быть
                     # двое — в таблице они разнесены по строкам 'утро' и 'вечер'.
                     names = [name for name in (morning, evening) if name]
@@ -292,10 +349,23 @@ class ScheduleService:
                         "evening": "",
                         "date_str": cell_value.strip(),
                         "weekday": self.get_weekday_name(date_value),
+                        "slots": [],
                     },
                 )
+                # Дубль даты дозаполняет только пустые поля — ячейки берём оттуда же.
+                fill_morning = not record["morning"] and bool(morning)
+                fill_evening = not record["evening"] and bool(evening)
                 record["morning"] = record["morning"] or morning
                 record["evening"] = record["evening"] or evening
+
+                for shift, sheet_row, value in cells:
+                    field = "morning" if shift == "morning" else "evening"
+                    if not (fill_morning if field == "morning" else fill_evening):
+                        continue
+                    for name in self.split_names(value):
+                        record["slots"].append(
+                            {"shift": shift, "name": name, "row": sheet_row, "col": col_idx + 1}
+                        )
 
         parsed = [schedule[date_key] for date_key in sorted(schedule)]
         self.logger.info(f"Разобран лист '{worksheet.title}': {len(parsed)} дат")
@@ -317,6 +387,15 @@ class ScheduleService:
         raise ValueError(
             f"Лист дежурств не найден: gid={gid}, имя={self.config.duty_sheet_name!r}"
         )
+
+    def open_worksheet(self):
+        """Лист дежурств по текущему конфигу. Бросает исключение, если не вышло."""
+        if not self.config.google_sheet_url:
+            raise ValueError("Не задана ссылка на Google-таблицу")
+        client = self.get_google_sheets_client()
+        if not client:
+            raise ValueError("Не удалось инициализировать клиент Google Sheets")
+        return self.open_duty_worksheet(client.open_by_url(self.config.google_sheet_url))
 
     def update_google_sheets(self) -> None:
         if not self.config.google_sheet_url:
@@ -340,6 +419,15 @@ class ScheduleService:
 
             if not schedule:
                 raise ValueError(f"В листе '{worksheet.title}' не найдено ни одной даты")
+
+            if self.swap_service is not None:
+                # Подмены, которые таблица ещё не подтвердила, накладываются
+                # поверх свежих данных — иначе синхронизация вернула бы прежнего.
+                # Сбой подмен не должен останавливать обновление табло.
+                try:
+                    schedule = self.swap_service.reconcile(schedule, worksheet)
+                except Exception as exc:
+                    self.logger.error(f"Ошибка сверки подмен, показываю таблицу как есть: {exc}")
 
             with self.cache_lock:
                 self.data_cache["schedule"] = schedule
@@ -367,6 +455,17 @@ class ScheduleService:
         with self.cache_lock:
             schedule = self.data_cache.get("schedule") or []
         return [duty.copy() for duty in schedule]
+
+    def replace_schedule(self, transform) -> None:
+        """Пересобирает закэшированное расписание функцией transform под локом.
+
+        Нужна, чтобы подмена сразу была видна на табло и в боте, не дожидаясь
+        следующего чтения таблицы. Время обновления и ошибку не трогает.
+        """
+        with self.cache_lock:
+            schedule = self.data_cache.get("schedule")
+            if schedule:
+                self.data_cache["schedule"] = transform(schedule)
 
     def get_schedule_entry_by_date(self, target_date: date) -> dict | None:
         for duty in self.get_schedule_snapshot():

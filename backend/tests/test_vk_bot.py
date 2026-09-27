@@ -10,9 +10,10 @@ import unittest
 from unittest.mock import patch
 
 from duty_scheduler.schedule_service import ScheduleService
+from duty_scheduler.swaps import SwapService
 from duty_scheduler.vk_bot import VkNotifier
 
-from tests.helpers import make_config
+from tests.helpers import FakeWorksheet, duty_sheet_fixture, make_config
 
 
 class VkNotifierTestCase(unittest.TestCase):
@@ -402,6 +403,171 @@ class VkCommandsTestCase(unittest.TestCase):
         self.notifier.group_id = None
 
         self.assert_chat_silence("[club777|@duty_bot] сегодня")
+
+
+
+class VkSwapDialogTestCase(unittest.TestCase):
+    """Диалог подмены в личке. Фикстура листа, «сейчас» — СР 02.09, 12:00."""
+
+    CALLER_ID = 101
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        root = Path(self.temp_dir.name)
+        self.config = make_config(project_root=root)
+        logger = logging.getLogger("vk-swap-test")
+
+        self.schedule_service = ScheduleService(self.config, logger)
+        now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=self.schedule_service.server_tz)
+        self.start_patch(patch.object(self.schedule_service, "get_current_datetime", return_value=now))
+        self.sheet = FakeWorksheet(duty_sheet_fixture())
+        self.start_patch(patch.object(self.schedule_service, "open_worksheet", side_effect=lambda: self.sheet))
+        # После записи бот перечитывает таблицу в фоне — в тестах сети нет.
+        self.start_patch(patch.object(self.schedule_service, "update_google_sheets"))
+        self.schedule_service.data_cache["schedule"] = self.schedule_service.parse_duty_sheet(self.sheet)
+
+        self.swaps = SwapService(self.config, logger, self.schedule_service, root / "swaps.json")
+        self.notifier = VkNotifier(self.config, logger, self.schedule_service, self.swaps)
+        (root / self.config.vk_users_file).write_text(
+            json.dumps({"Булатов Иван": self.CALLER_ID, "Афонин Кирилл": 202}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.sent = self.start_patch(patch.object(self.notifier, "send_vk_message", return_value=True))
+
+    def start_patch(self, patcher):
+        mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mock
+
+    def dm(self, text: str | None = None, **payload) -> tuple[str, dict | None]:
+        message = {
+            "peer_id": self.CALLER_ID,
+            "from_id": self.CALLER_ID,
+            "text": text or "",
+            "payload": json.dumps(payload) if payload else None,
+        }
+        self.assertTrue(self.notifier.handle_command_message(message))
+        call = self.sent.call_args
+        keyboard = call.kwargs.get("keyboard")
+        return call.args[0], json.loads(keyboard) if keyboard else None
+
+    @staticmethod
+    def labels(keyboard: dict) -> list[list[str]]:
+        return [[button["action"]["label"] for button in row] for row in keyboard["buttons"]]
+
+    def test_private_keyboard_has_swap_button_in_the_same_style(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard(inline=False))
+
+        self.assertEqual(self.labels(keyboard), [["Сегодня", "Завтра", "Неделя"], ["Подмена"]])
+        colors = {button["color"] for row in keyboard["buttons"] for button in row}
+        self.assertEqual(len(colors), 1)
+
+    def test_chat_keyboard_has_no_swap_button(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard())
+
+        self.assertEqual(self.labels(keyboard), [["Сегодня", "Завтра", "Неделя"]])
+
+    def test_private_help_mentions_swap(self) -> None:
+        answer, _ = self.dm("привет")
+
+        self.assertIn("Подмена", answer)
+
+    def test_full_swap_dialog_writes_table_and_tells_the_chat(self) -> None:
+        answer, keyboard = self.dm("Подмена", command="swap")
+        self.assertIn("на какой день", answer)
+        self.assertFalse(keyboard["inline"])
+        self.assertEqual(self.labels(keyboard)[0], ["СР 02.09", "ЧТ 03.09", "ПТ 04.09"])
+        self.assertEqual(self.labels(keyboard)[-1], ["Отмена"])
+
+        answer, keyboard = self.dm("ЧТ 03.09", command="swap_date", date="2026-09-03")
+        self.assertEqual(answer, "03.09 (ЧТ):\nУтро: Юрчик\nВечер: Афонин Кирилл\n\nКого подменяете?")
+        self.assertEqual(self.labels(keyboard), [["Юрчик", "Афонин К."], ["Другая дата", "Отмена"]])
+
+        answer, keyboard = self.dm("Афонин К.", command="swap_person", date="2026-09-03", index=1)
+        self.assertIn("Подмена: 03.09 (ЧТ), вечер.", answer)
+        self.assertIn("Вместо: Афонин Кирилл", answer)
+        self.assertIn("Дежурит: Булатов Иван (вы)", answer)
+        self.assertEqual(self.labels(keyboard), [["Подтвердить", "Отмена"]])
+
+        answer, keyboard = self.dm("Подтвердить", command="swap_confirm")
+        self.assertIn("Готово", answer)
+        self.assertEqual(self.labels(keyboard)[-1], ["Подмена"])
+        self.assertEqual(self.sheet.cell(4, 5).value, "Булатов Иван Олегович")
+
+        # Перед ответом в личку ушло сообщение в беседу — с упоминаниями обоих.
+        chat_call = self.sent.call_args_list[-2]
+        self.assertNotIn("peer_id", chat_call.kwargs)
+        self.assertEqual(
+            chat_call.args[0],
+            "Подмена: 03.09 (ЧТ), вечер вместо [id202|Афонин Кирилл] дежурит [id101|Булатов Иван].",
+        )
+
+    def test_date_can_be_typed(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("3.09")
+
+        self.assertIn("Кого подменяете?", answer)
+
+    def test_unknown_date_text_asks_again(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("в четверг")
+
+        self.assertIn("Не понял дату", answer)
+        self.assertEqual(self.notifier.swap_sessions[self.CALLER_ID]["step"], "date")
+
+    def test_past_date_is_rejected(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("01.09")
+
+        self.assertIn("уже прошло", answer)
+
+    def test_cancel_forgets_the_dialog(self) -> None:
+        self.dm("подмена")
+
+        answer, keyboard = self.dm("Отмена", command="swap_cancel")
+
+        self.assertEqual(answer, "Подмена отменена.")
+        self.assertEqual(self.labels(keyboard)[-1], ["Подмена"])
+        self.assertNotIn(self.CALLER_ID, self.notifier.swap_sessions)
+
+    def test_stale_confirm_button_does_nothing(self) -> None:
+        answer, _ = self.dm("Подтвердить", command="swap_confirm")
+
+        self.assertIn("устарел", answer)
+        self.assertEqual(self.sheet.updates, [])
+
+    def test_regular_command_in_the_middle_ends_the_dialog(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("сегодня")
+
+        self.assertTrue(answer.startswith("Сегодня (02.09, СР)"))
+        self.assertNotIn(self.CALLER_ID, self.notifier.swap_sessions)
+
+    def test_swap_in_chat_points_to_private_messages(self) -> None:
+        self.notifier.group_id = 777
+        message = {"peer_id": 123, "from_id": 55, "text": "[club777|@duty_bot] подмена"}
+
+        self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertIn("в личных сообщениях", self.sent.call_args.args[0])
+
+    def test_button_labels_stay_distinct(self) -> None:
+        namesakes = [
+            {"shift": "morning", "name": "Козлов Егор Евгеньевич"},
+            {"shift": "evening", "name": "Козлов Ефим Петрович"},
+        ]
+        same_person = [
+            {"shift": "morning", "name": "Юрчик"},
+            {"shift": "evening", "name": "Юрчик"},
+        ]
+
+        self.assertEqual(self.notifier.person_button_labels(namesakes), ["Козлов Егор", "Козлов Ефим"])
+        self.assertEqual(self.notifier.person_button_labels(same_person), ["Юрчик (утро)", "Юрчик (вечер)"])
 
 
 if __name__ == "__main__":

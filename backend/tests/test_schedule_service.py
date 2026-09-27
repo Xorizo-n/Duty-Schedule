@@ -63,6 +63,37 @@ class ScheduleServiceTestCase(unittest.TestCase):
             "Козлов Егор Евгеньевич, Козлов Данила Дмитриевич",
         )
 
+    def test_parse_duty_sheet_remembers_cell_of_every_person(self) -> None:
+        by_date = self.parse_fixture()
+
+        # 01.09 — колонка C; утро в строке 3, вечер в строке 4 (с единицы, как в Sheets).
+        self.assertEqual(
+            by_date[date(2026, 9, 1)]["slots"],
+            [
+                {"shift": "morning", "name": "Булатов Иван Олегович", "row": 3, "col": 3},
+                {"shift": "evening", "name": "Афонин Кирилл Борисович", "row": 4, "col": 3},
+            ],
+        )
+        self.assertEqual(by_date[date(2026, 8, 31)]["slots"], [])
+
+    def test_parse_duty_sheet_keeps_both_saturday_cells_as_one_shift(self) -> None:
+        saturday = self.parse_fixture()[date(2026, 9, 5)]
+
+        self.assertEqual(
+            saturday["slots"],
+            [
+                {"shift": "saturday", "name": "Козлов Егор Евгеньевич", "row": 3, "col": 8},
+                {"shift": "saturday", "name": "Козлов Данила Дмитриевич", "row": 4, "col": 8},
+            ],
+        )
+
+    def test_api_payload_does_not_expose_cells(self) -> None:
+        with patch.object(self.service, "get_current_datetime", return_value=self.reference):
+            self.service.data_cache["schedule"] = self.service.parse_duty_sheet(FakeWorksheet(duty_sheet_fixture()))
+            payload = self.service.build_api_payload()
+
+        self.assertNotIn("slots", payload["weeks"][0][1])
+
     def test_parse_date_cell_picks_year_closest_to_reference(self) -> None:
         self.assertEqual(
             ScheduleService.parse_date_cell("04.01", reference_date=date(2026, 12, 29)),

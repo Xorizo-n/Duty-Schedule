@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from duty_scheduler.config import AppConfig
 
@@ -35,9 +36,24 @@ class FakeWorksheet:
     def __init__(self, values: list[list[str]], title: str = "Новое Дежуство ") -> None:
         self._values = values
         self.title = title
+        self.updates: list[tuple[int, int, str]] = []
 
     def get_all_values(self) -> list[list[str]]:
         return [list(row) for row in self._values]
+
+    def cell(self, row: int, col: int) -> SimpleNamespace:
+        # Как в gspread: строки и колонки с единицы, у ячейки есть .value.
+        values_row = self._values[row - 1] if row <= len(self._values) else []
+        return SimpleNamespace(value=values_row[col - 1] if col <= len(values_row) else "")
+
+    def update_cell(self, row: int, col: int, value: str) -> None:
+        while len(self._values) < row:
+            self._values.append([])
+        values_row = self._values[row - 1]
+        while len(values_row) < col:
+            values_row.append("")
+        values_row[col - 1] = value
+        self.updates.append((row, col, value))
 
 
 def duty_sheet_fixture() -> list[list[str]]:

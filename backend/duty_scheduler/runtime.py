@@ -29,6 +29,8 @@ def apply_runtime_config(app: Flask) -> AppConfig:
     apply_log_levels(app.extensions["logger"], config)
     app.extensions["schedule_service"].apply_config(config)
     app.extensions["vk_notifier"].apply_config(config)
+    if "swap_service" in app.extensions:
+        app.extensions["swap_service"].apply_config(config)
     return config
 
 
