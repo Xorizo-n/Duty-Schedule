@@ -79,6 +79,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 | `frontend/static/{backgrounds.js,backgrounds.css}` | Анимированный фон табло: движок сцен и пресеты |
 | `frontend/static/performance.js` | `PerformanceGuard` — облегчённый режим при низком FPS |
 | `frontend/static/fonts/` | Шрифт Onest (woff2) и его лицензия |
+| `DESIGN.md` | Дизайн-система «Стекло»: переносимые правила UI (цвет, типографика, компоненты, движение) без специфики фона табло |
 | `frontend/templates/settings.html`, `frontend/static/{settings.js,settings.css}` | Страница настроек |
 | `animations_examples/` | Сторонние CSS-примеры-референсы. **Не часть приложения**, в образ не копируются |
 | `deploy.sh`, `docker-compose.yml`, `Dockerfile`, `.github/workflows/docker.yml` | Деплой и CI |
