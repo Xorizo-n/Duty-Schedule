@@ -25,6 +25,7 @@ const WEEKDAYS_LONG = ["воскресенье", "понедельник", "вт
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15000;
 const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const STARTUP_RETRY_MS = 3000;
 
 class DutyScheduleApp {
     constructor() {
@@ -57,6 +58,7 @@ class DutyScheduleApp {
         this.enteringTimeout = null;
         this.versionCheckInterval = null;
         this.isReloading = false;
+        this.retryTimeout = null;
         this.performanceGuard = null;
 
         this.init();
@@ -152,6 +154,19 @@ class DutyScheduleApp {
 
     processData(data) {
         this.syncServerTime(data.server_time);
+
+        // Ни данных, ни ошибки — сервер только что стартовал (например, после
+        // деплоя) и ещё не прочитал таблицу. Пустую сетку не рисуем: оставляем
+        // то, что уже на экране, и быстро спрашиваем снова.
+        if (!data.last_updated && !data.error) {
+            if (!this.data) {
+                this.showScheduleMessage("Загрузка расписания…");
+            }
+            this.setStatus("loading", "Сервер загружает данные…");
+            clearTimeout(this.retryTimeout);
+            this.retryTimeout = setTimeout(() => this.fetchData(), STARTUP_RETRY_MS);
+            return;
+        }
         this.data = data;
 
         // Ошибка при пустом кэше — показывать нечего. Ошибка при непустом кэше
@@ -632,6 +647,7 @@ class DutyScheduleApp {
         clearTimeout(this.tickTimeout);
         clearInterval(this.dataUpdateInterval);
         clearInterval(this.versionCheckInterval);
+        clearTimeout(this.retryTimeout);
         this.background.destroy();
         this.performanceGuard.destroy();
     }
