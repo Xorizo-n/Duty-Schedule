@@ -192,10 +192,25 @@ class VkCommandsTestCase(unittest.TestCase):
         payloads = [json.loads(button["action"]["payload"])["command"] for button in keyboard["buttons"][0]]
         self.assertEqual(payloads, ["today", "tomorrow", "week"])
 
+    def test_keyboard_buttons_share_one_color(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard())
+
+        colors = {button["color"] for button in keyboard["buttons"][0]}
+        self.assertEqual(len(colors), 1)
+
+    def test_private_keyboard_has_the_same_buttons_but_stays_under_the_input(self) -> None:
+        inline = json.loads(self.notifier.build_keyboard())
+        persistent = json.loads(self.notifier.build_keyboard(inline=False))
+
+        self.assertFalse(persistent["inline"])
+        self.assertFalse(persistent["one_time"])
+        self.assertEqual(persistent["buttons"], inline["buttons"])
+
     def test_keyboard_is_omitted_when_commands_are_disabled(self) -> None:
         self.notifier.config = replace(self.config, vk_commands_enabled=False)
 
         self.assertIsNone(self.notifier.build_keyboard())
+        self.assertIsNone(self.notifier.build_keyboard(inline=False))
 
     def test_resolve_command_reads_button_payload(self) -> None:
         self.assertEqual(self.notifier.resolve_command('{"command": "week"}', "Неделя"), "week")
@@ -257,7 +272,7 @@ class VkCommandsTestCase(unittest.TestCase):
             self.assertTrue(self.notifier.handle_command_message(message))
 
         self.assertEqual(send_vk_message.call_args.kwargs["peer_id"], 123)
-        self.assertIsNotNone(send_vk_message.call_args.kwargs["keyboard"])
+        self.assertTrue(json.loads(send_vk_message.call_args.kwargs["keyboard"])["inline"])
 
     def test_handle_command_message_ignores_other_conversations(self) -> None:
         message = {"peer_id": 999, "from_id": 55, "text": "сегодня"}
@@ -270,6 +285,72 @@ class VkCommandsTestCase(unittest.TestCase):
     def test_handle_command_message_ignores_its_own_reply(self) -> None:
         # Ответ самого сообщества приходит тем же событием message_new.
         message = {"peer_id": 123, "from_id": -777, "text": "сегодня"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def write_mapping(self, mapping: dict) -> None:
+        mapping_path = self.project_root / self.config.vk_users_file
+        mapping_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+
+    def test_allowed_user_ids_reads_both_mapping_formats(self) -> None:
+        self.write_mapping(
+            {
+                "Иван Иванов": 101,
+                "Пётр Петров": {"id": 202, "label": "Пётр"},
+                "Строка": "303",
+                "Без id": {"label": "x"},
+                "Мусор": "abc",
+            }
+        )
+
+        self.assertEqual(self.notifier.allowed_user_ids(), {101, 202, 303})
+
+    def test_private_message_from_listed_user_is_answered_in_that_dialog(self) -> None:
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 101, "from_id": 101, "text": "завтра", "payload": None}
+
+        with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}), \
+             patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertEqual(send_vk_message.call_args.kwargs["peer_id"], 101)
+        self.assertIn("Завтра", send_vk_message.call_args.args[0])
+        # В личке кнопки не цепляются к ответу, а живут под полем ввода.
+        self.assertFalse(json.loads(send_vk_message.call_args.kwargs["keyboard"])["inline"])
+
+    def test_private_message_from_unknown_user_is_ignored(self) -> None:
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 404, "from_id": 404, "text": "сегодня"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def test_private_message_without_command_gets_help(self) -> None:
+        self.write_mapping({"Пётр Петров": {"id": 202, "label": "Пётр"}})
+        message = {"peer_id": 202, "from_id": 202, "text": "привет"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertIn("сегодня", send_vk_message.call_args.args[0])
+
+    def test_chat_message_without_command_stays_unanswered(self) -> None:
+        message = {"peer_id": 123, "from_id": 55, "text": "всем привет"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def test_listed_user_is_not_answered_in_a_foreign_chat(self) -> None:
+        # Участник из списка пишет в другой беседе — там бот молчит.
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 2_000_000_005, "from_id": 101, "text": "сегодня"}
 
         with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
             self.assertFalse(self.notifier.handle_command_message(message))

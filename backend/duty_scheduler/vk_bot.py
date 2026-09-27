@@ -19,6 +19,8 @@ EVENING_NOTIFICATION_HOUR = 19
 SATURDAY_NOTIFICATION_TYPES = ("saturday_today", "saturday_tomorrow")
 
 VK_API_URL = "https://api.vk.com/method/"
+# peer_id бесед начинается с 2000000000, всё меньше — личные диалоги.
+VK_CHAT_PEER_OFFSET = 2_000_000_000
 LONGPOLL_WAIT_SECONDS = 25
 
 # Подписи кнопок клавиатуры и текстовые синонимы тех же команд.
@@ -27,6 +29,8 @@ COMMAND_BUTTONS = (
     ("tomorrow", "Завтра"),
     ("week", "Неделя"),
 )
+# Один цвет на все кнопки: команды равноправны, выделять какую-то незачем.
+COMMAND_BUTTON_COLOR = "primary"
 COMMAND_ALIASES = {
     "сегодня": "today",
     "today": "today",
@@ -276,8 +280,14 @@ class VkNotifier:
     # Кнопки и ответы на команды
     # ------------------------------------------------------------------
 
-    def build_keyboard(self) -> str | None:
-        """Инлайн-клавиатура «Сегодня / Завтра / Неделя» к сообщению бота."""
+    def build_keyboard(self, inline: bool = True) -> str | None:
+        """Клавиатура «Сегодня / Завтра / Неделя».
+
+        inline=True — кнопки под сообщением бота (беседа). inline=False —
+        постоянная клавиатура под полем ввода (личка): VK держит её в диалоге,
+        пока её не заменят, поэтому кнопки не повторяются в каждом ответе.
+        Кнопки в обоих вариантах одинаковые, включая цвет.
+        """
         if not self.config.vk_commands_enabled:
             return None
 
@@ -288,11 +298,15 @@ class VkNotifier:
                     "label": label,
                     "payload": json.dumps({"command": command}, ensure_ascii=False),
                 },
-                "color": "secondary" if command == "week" else "primary",
+                "color": COMMAND_BUTTON_COLOR,
             }
             for command, label in COMMAND_BUTTONS
         ]
-        return json.dumps({"inline": True, "buttons": [buttons]}, ensure_ascii=False)
+        keyboard: dict = {"inline": inline, "buttons": [buttons]}
+        if not inline:
+            # Не прятать клавиатуру после нажатия — она нужна постоянно.
+            keyboard["one_time"] = False
+        return json.dumps(keyboard, ensure_ascii=False)
 
     @staticmethod
     def resolve_command(payload: str | None, text: str | None) -> str | None:
@@ -385,26 +399,63 @@ class VkNotifier:
             "Можно и текстом: «сегодня», «завтра», «неделя»."
         )
 
+    def allowed_user_ids(self, user_mapping: dict | None = None) -> set[int]:
+        """VK id участников из vk_users.json — им бот отвечает в личке."""
+        if user_mapping is None:
+            user_mapping = self.load_vk_user_mapping()
+
+        user_ids: set[int] = set()
+        for value in user_mapping.values():
+            vk_id = value.get("id") if isinstance(value, dict) else value
+            if isinstance(vk_id, bool):
+                continue
+            if isinstance(vk_id, int) or (isinstance(vk_id, str) and vk_id.strip().isdigit()):
+                if int(vk_id) > 0:
+                    user_ids.add(int(vk_id))
+        return user_ids
+
     def handle_command_message(self, message: dict) -> bool:
         """Отвечает на одно входящее сообщение. True — ответ отправлен."""
         peer_id = message.get("peer_id")
-        if peer_id is None or str(peer_id) != str(self.config.vk_peer_id or ""):
-            # Отвечаем только в настроенной беседе: график — не публичные данные.
+        if peer_id is None:
             return False
 
         # Собственные сообщения группы приходят тем же событием.
-        if message.get("out") or int(message.get("from_id") or 0) < 0:
+        try:
+            from_id = int(message.get("from_id") or 0)
+        except (TypeError, ValueError):
             return False
+        if message.get("out") or from_id <= 0:
+            return False
+
+        is_configured_chat = str(peer_id) == str(self.config.vk_peer_id or "")
+        # В личке peer_id совпадает с id собеседника; у бесед он от 2000000000.
+        is_private = str(peer_id) == str(from_id) and from_id < VK_CHAT_PEER_OFFSET
+
+        if not is_configured_chat:
+            if not is_private:
+                # Из бесед отвечаем только в настроенной.
+                return False
+            # График — не публичные данные: в личке отвечаем только участникам
+            # из vk_users.json, тому же списку, что используется для упоминаний.
+            if from_id not in self.allowed_user_ids():
+                self.logger.info(f"Личное сообщение VK от {from_id} проигнорировано: его нет в списке участников")
+                return False
 
         command = self.resolve_command(message.get("payload"), message.get("text"))
         if not command:
-            return False
+            if not is_private:
+                return False
+            # В беседе люди разговаривают между собой, а в личке любое
+            # сообщение адресовано боту — подсказываем, что он умеет.
+            command = "help"
 
         self.logger.info(f"Команда VK '{command}' от {message.get('from_id')}")
         return self.send_vk_message(
             self.build_command_answer(command),
             peer_id=peer_id,
-            keyboard=self.build_keyboard(),
+            # В личке — постоянная клавиатура диалога вместо кнопок под ответом.
+            keyboard=self.build_keyboard(inline=not is_private),
         )
 
     # ------------------------------------------------------------------
@@ -477,12 +528,8 @@ class VkNotifier:
 
     def _commands_loop(self) -> None:
         while True:
-            # Без беседы отвечать всё равно некуда — не тревожим VK впустую.
-            if (
-                not self.config.vk_commands_enabled
-                or not self.config.vk_bot_token
-                or not self.config.vk_peer_id
-            ):
+            # Беседа не обязательна: без неё бот всё равно отвечает в личке.
+            if not self.config.vk_commands_enabled or not self.config.vk_bot_token:
                 time.sleep(30)
                 continue
 
