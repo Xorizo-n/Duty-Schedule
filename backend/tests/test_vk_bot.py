@@ -4,15 +4,19 @@ from dataclasses import replace
 from datetime import date, datetime
 import json
 import logging
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+from duty_scheduler.config import load_config
 from duty_scheduler.schedule_service import ScheduleService
+from duty_scheduler.settings_store import SETTING_FIELDS
+from duty_scheduler.swaps import SwapService
 from duty_scheduler.vk_bot import VkNotifier
 
-from tests.helpers import make_config
+from tests.helpers import FakeWorksheet, duty_sheet_fixture, make_config
 
 
 class VkNotifierTestCase(unittest.TestCase):
@@ -177,6 +181,9 @@ class VkCommandsTestCase(unittest.TestCase):
         self.config = make_config(project_root=self.project_root)
         self.schedule_service = ScheduleService(self.config, logging.getLogger("vk-commands-schedule-test"))
         self.notifier = VkNotifier(self.config, logging.getLogger("vk-commands-test"), self.schedule_service)
+        # Обычно это заполняет _init_longpoll по groups.getById.
+        self.notifier.group_id = 777
+        self.notifier.group_screen_name = "duty_bot"
         self.now = datetime(2026, 9, 9, 12, 30, 0, tzinfo=self.schedule_service.server_tz)
         patcher = patch.object(self.schedule_service, "get_current_datetime", return_value=self.now)
         patcher.start()
@@ -192,16 +199,34 @@ class VkCommandsTestCase(unittest.TestCase):
         payloads = [json.loads(button["action"]["payload"])["command"] for button in keyboard["buttons"][0]]
         self.assertEqual(payloads, ["today", "tomorrow", "week"])
 
+    def test_keyboard_buttons_share_one_color(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard())
+
+        colors = {button["color"] for button in keyboard["buttons"][0]}
+        self.assertEqual(len(colors), 1)
+
+    def test_private_keyboard_has_the_same_buttons_but_stays_under_the_input(self) -> None:
+        inline = json.loads(self.notifier.build_keyboard())
+        persistent = json.loads(self.notifier.build_keyboard(inline=False))
+
+        self.assertFalse(persistent["inline"])
+        self.assertFalse(persistent["one_time"])
+        self.assertEqual(persistent["buttons"], inline["buttons"])
+
     def test_keyboard_is_omitted_when_commands_are_disabled(self) -> None:
         self.notifier.config = replace(self.config, vk_commands_enabled=False)
 
         self.assertIsNone(self.notifier.build_keyboard())
+        self.assertIsNone(self.notifier.build_keyboard(inline=False))
 
     def test_resolve_command_reads_button_payload(self) -> None:
         self.assertEqual(self.notifier.resolve_command('{"command": "week"}', "Неделя"), "week")
 
     def test_resolve_command_ignores_bot_mention_in_text(self) -> None:
         self.assertEqual(self.notifier.resolve_command(None, "[club1|@duty_bot] Завтра!"), "tomorrow")
+
+    def test_resolve_command_ignores_plain_typed_mention(self) -> None:
+        self.assertEqual(self.notifier.resolve_command(None, "@duty_bot неделя"), "week")
 
     def test_resolve_command_returns_none_for_ordinary_message(self) -> None:
         self.assertIsNone(self.notifier.resolve_command(None, "всем привет"))
@@ -250,17 +275,17 @@ class VkCommandsTestCase(unittest.TestCase):
         )
 
     def test_handle_command_message_answers_in_the_configured_peer(self) -> None:
-        message = {"peer_id": 123, "from_id": 55, "text": "сегодня", "payload": None}
+        message = {"peer_id": 123, "from_id": 55, "text": "[club777|@duty_bot] сегодня", "payload": None}
 
         with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}), \
              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
             self.assertTrue(self.notifier.handle_command_message(message))
 
         self.assertEqual(send_vk_message.call_args.kwargs["peer_id"], 123)
-        self.assertIsNotNone(send_vk_message.call_args.kwargs["keyboard"])
+        self.assertTrue(json.loads(send_vk_message.call_args.kwargs["keyboard"])["inline"])
 
     def test_handle_command_message_ignores_other_conversations(self) -> None:
-        message = {"peer_id": 999, "from_id": 55, "text": "сегодня"}
+        message = {"peer_id": 999, "from_id": 55, "text": "[club777|@duty_bot] сегодня"}
 
         with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
             self.assertFalse(self.notifier.handle_command_message(message))
@@ -275,6 +300,300 @@ class VkCommandsTestCase(unittest.TestCase):
             self.assertFalse(self.notifier.handle_command_message(message))
 
         self.assertFalse(send_vk_message.called)
+
+    def write_mapping(self, mapping: dict) -> None:
+        mapping_path = self.project_root / self.config.vk_users_file
+        mapping_path.write_text(json.dumps(mapping, ensure_ascii=False), encoding="utf-8")
+
+    def test_allowed_user_ids_reads_both_mapping_formats(self) -> None:
+        self.write_mapping(
+            {
+                "Иван Иванов": 101,
+                "Пётр Петров": {"id": 202, "label": "Пётр"},
+                "Строка": "303",
+                "Без id": {"label": "x"},
+                "Мусор": "abc",
+            }
+        )
+
+        self.assertEqual(self.notifier.allowed_user_ids(), {101, 202, 303})
+
+    def test_private_message_from_listed_user_is_answered_in_that_dialog(self) -> None:
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 101, "from_id": 101, "text": "завтра", "payload": None}
+
+        with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}), \
+             patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertEqual(send_vk_message.call_args.kwargs["peer_id"], 101)
+        self.assertIn("Завтра", send_vk_message.call_args.args[0])
+        # В личке кнопки не цепляются к ответу, а живут под полем ввода.
+        self.assertFalse(json.loads(send_vk_message.call_args.kwargs["keyboard"])["inline"])
+
+    def test_private_message_from_unknown_user_is_ignored(self) -> None:
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 404, "from_id": 404, "text": "сегодня"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def test_private_message_without_command_gets_help(self) -> None:
+        self.write_mapping({"Пётр Петров": {"id": 202, "label": "Пётр"}})
+        message = {"peer_id": 202, "from_id": 202, "text": "привет"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertIn("сегодня", send_vk_message.call_args.args[0])
+
+    def test_chat_message_without_command_stays_unanswered(self) -> None:
+        message = {"peer_id": 123, "from_id": 55, "text": "всем привет"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def test_listed_user_is_not_answered_in_a_foreign_chat(self) -> None:
+        # Участник из списка пишет в другой беседе — там бот молчит.
+        self.write_mapping({"Иван Иванов": 101})
+        message = {"peer_id": 2_000_000_005, "from_id": 101, "text": "сегодня"}
+
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+
+        self.assertFalse(send_vk_message.called)
+
+    def assert_chat_reply(self, text: str | None, payload: str | None = None) -> str:
+        message = {"peer_id": 123, "from_id": 55, "text": text, "payload": payload}
+        with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}),              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+        return send_vk_message.call_args.args[0]
+
+    def assert_chat_silence(self, text: str | None) -> None:
+        message = {"peer_id": 123, "from_id": 55, "text": text}
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+        self.assertFalse(send_vk_message.called)
+
+    def test_chat_command_without_mention_is_ignored(self) -> None:
+        self.assert_chat_silence("сегодня")
+
+    def test_chat_command_with_typed_mention_is_answered(self) -> None:
+        self.assertIn("Завтра", self.assert_chat_reply("@duty_bot завтра"))
+
+    def test_chat_command_mentioning_by_club_id_is_answered(self) -> None:
+        self.assertIn("Сегодня", self.assert_chat_reply("@club777, сегодня"))
+
+    def test_chat_command_mentioning_someone_else_is_ignored(self) -> None:
+        self.assert_chat_silence("[club555|@other_bot] сегодня")
+        self.assert_chat_silence("[id55|Вася] сегодня")
+        self.assert_chat_silence("@vasya сегодня")
+
+    def test_chat_button_press_needs_no_mention(self) -> None:
+        with patch.object(self.schedule_service, "get_display_weeks", return_value=[]):
+            answer = self.assert_chat_reply("Неделя", payload='{"command": "week"}')
+
+        self.assertEqual(answer, "Расписание ещё не загружено.")
+
+    def test_bare_mention_in_chat_gets_help(self) -> None:
+        self.assertIn("«сегодня»", self.assert_chat_reply("[club777|@duty_bot]"))
+
+    def test_chat_mention_is_not_recognised_before_group_is_known(self) -> None:
+        self.notifier.group_id = None
+
+        self.assert_chat_silence("[club777|@duty_bot] сегодня")
+
+
+
+class VkSwapDialogTestCase(unittest.TestCase):
+    """Диалог подмены в личке. Фикстура листа, «сейчас» — СР 02.09, 12:00."""
+
+    CALLER_ID = 101
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        root = Path(self.temp_dir.name)
+        self.config = make_config(project_root=root)
+        logger = logging.getLogger("vk-swap-test")
+
+        self.schedule_service = ScheduleService(self.config, logger)
+        now = datetime(2026, 9, 2, 12, 0, 0, tzinfo=self.schedule_service.server_tz)
+        self.start_patch(patch.object(self.schedule_service, "get_current_datetime", return_value=now))
+        self.sheet = FakeWorksheet(duty_sheet_fixture())
+        self.start_patch(patch.object(self.schedule_service, "open_worksheet", side_effect=lambda: self.sheet))
+        # После записи бот перечитывает таблицу в фоне — в тестах сети нет.
+        self.start_patch(patch.object(self.schedule_service, "update_google_sheets"))
+        self.schedule_service.data_cache["schedule"] = self.schedule_service.parse_duty_sheet(self.sheet)
+
+        self.swaps = SwapService(self.config, logger, self.schedule_service, root / "swaps.json")
+        self.notifier = VkNotifier(self.config, logger, self.schedule_service, self.swaps)
+        (root / self.config.vk_users_file).write_text(
+            json.dumps({"Булатов Иван": self.CALLER_ID, "Афонин Кирилл": 202}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.sent = self.start_patch(patch.object(self.notifier, "send_vk_message", return_value=True))
+
+    def start_patch(self, patcher):
+        mock = patcher.start()
+        self.addCleanup(patcher.stop)
+        return mock
+
+    def dm(self, text: str | None = None, **payload) -> tuple[str, dict | None]:
+        message = {
+            "peer_id": self.CALLER_ID,
+            "from_id": self.CALLER_ID,
+            "text": text or "",
+            "payload": json.dumps(payload) if payload else None,
+        }
+        self.assertTrue(self.notifier.handle_command_message(message))
+        call = self.sent.call_args
+        keyboard = call.kwargs.get("keyboard")
+        return call.args[0], json.loads(keyboard) if keyboard else None
+
+    @staticmethod
+    def labels(keyboard: dict) -> list[list[str]]:
+        return [[button["action"]["label"] for button in row] for row in keyboard["buttons"]]
+
+    def test_private_keyboard_has_swap_button_in_the_same_style(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard(inline=False))
+
+        self.assertEqual(self.labels(keyboard), [["Сегодня", "Завтра", "Неделя"], ["Подмена"]])
+        colors = {button["color"] for row in keyboard["buttons"] for button in row}
+        self.assertEqual(len(colors), 1)
+
+    def test_chat_keyboard_has_no_swap_button(self) -> None:
+        keyboard = json.loads(self.notifier.build_keyboard())
+
+        self.assertEqual(self.labels(keyboard), [["Сегодня", "Завтра", "Неделя"]])
+
+    def test_private_help_mentions_swap(self) -> None:
+        answer, _ = self.dm("привет")
+
+        self.assertIn("Подмена", answer)
+
+    def test_full_swap_dialog_writes_table_and_tells_the_chat(self) -> None:
+        answer, keyboard = self.dm("Подмена", command="swap")
+        self.assertIn("на какой день", answer)
+        self.assertFalse(keyboard["inline"])
+        self.assertEqual(self.labels(keyboard)[0], ["СР 02.09", "ЧТ 03.09", "ПТ 04.09"])
+        self.assertEqual(self.labels(keyboard)[-1], ["Отмена"])
+
+        answer, keyboard = self.dm("ЧТ 03.09", command="swap_date", date="2026-09-03")
+        self.assertEqual(answer, "03.09 (ЧТ):\nУтро: Юрчик\nВечер: Афонин Кирилл\n\nКого подменяете?")
+        self.assertEqual(self.labels(keyboard), [["Юрчик", "Афонин К."], ["Другая дата", "Отмена"]])
+
+        answer, keyboard = self.dm("Афонин К.", command="swap_person", date="2026-09-03", index=1)
+        self.assertIn("Подмена: 03.09 (ЧТ), вечер.", answer)
+        self.assertIn("Вместо: Афонин Кирилл", answer)
+        self.assertIn("Дежурит: Булатов Иван (вы)", answer)
+        self.assertEqual(self.labels(keyboard), [["Подтвердить", "Отмена"]])
+
+        answer, keyboard = self.dm("Подтвердить", command="swap_confirm")
+        self.assertIn("Готово", answer)
+        self.assertEqual(self.labels(keyboard)[-1], ["Подмена"])
+        self.assertEqual(self.sheet.cell(4, 5).value, "Булатов Иван Олегович")
+
+        # Перед ответом в личку ушло сообщение в беседу — с упоминаниями обоих.
+        chat_call = self.sent.call_args_list[-2]
+        self.assertNotIn("peer_id", chat_call.kwargs)
+        self.assertEqual(
+            chat_call.args[0],
+            "Подмена: 03.09 (ЧТ), вечер вместо [id202|Афонин Кирилл] дежурит [id101|Булатов Иван].",
+        )
+
+    def test_swap_is_not_announced_in_chat_when_flag_is_off(self) -> None:
+        self.notifier.config = replace(self.config, vk_swap_announce=False)
+        self.dm("подмена")
+        self.dm(command="swap_date", date="2026-09-03")
+        self.dm(command="swap_person", date="2026-09-03", index=1)
+
+        answer, _ = self.dm(command="swap_confirm")
+
+        self.assertIn("Готово", answer)
+        self.assertEqual(self.sheet.cell(4, 5).value, "Булатов Иван Олегович")
+        # Все сообщения ушли только в личку — в беседу ничего.
+        self.assertTrue(all(call.kwargs.get("peer_id") == self.CALLER_ID for call in self.sent.call_args_list))
+
+    def test_swap_announce_flag_is_read_from_env_only(self) -> None:
+        with patch.dict(os.environ, {"VK_SWAP_ANNOUNCE": "0"}):
+            self.assertFalse(load_config().vk_swap_announce)
+            # Значение из файла настроек его не включит и не выключит.
+            self.assertFalse(load_config({"vk_swap_announce": True}).vk_swap_announce)
+        with patch.dict(os.environ):
+            os.environ.pop("VK_SWAP_ANNOUNCE", None)
+            self.assertTrue(load_config().vk_swap_announce)
+        self.assertNotIn("vk_swap_announce", {field.key for field in SETTING_FIELDS})
+
+    def test_date_can_be_typed(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("3.09")
+
+        self.assertIn("Кого подменяете?", answer)
+
+    def test_unknown_date_text_asks_again(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("в четверг")
+
+        self.assertIn("Не понял дату", answer)
+        self.assertEqual(self.notifier.swap_sessions[self.CALLER_ID]["step"], "date")
+
+    def test_past_date_is_rejected(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("01.09")
+
+        self.assertIn("уже прошло", answer)
+
+    def test_cancel_forgets_the_dialog(self) -> None:
+        self.dm("подмена")
+
+        answer, keyboard = self.dm("Отмена", command="swap_cancel")
+
+        self.assertEqual(answer, "Подмена отменена.")
+        self.assertEqual(self.labels(keyboard)[-1], ["Подмена"])
+        self.assertNotIn(self.CALLER_ID, self.notifier.swap_sessions)
+
+    def test_stale_confirm_button_does_nothing(self) -> None:
+        answer, _ = self.dm("Подтвердить", command="swap_confirm")
+
+        self.assertIn("устарел", answer)
+        self.assertEqual(self.sheet.updates, [])
+
+    def test_regular_command_in_the_middle_ends_the_dialog(self) -> None:
+        self.dm("подмена")
+
+        answer, _ = self.dm("сегодня")
+
+        self.assertTrue(answer.startswith("Сегодня (02.09, СР)"))
+        self.assertNotIn(self.CALLER_ID, self.notifier.swap_sessions)
+
+    def test_swap_in_chat_points_to_private_messages(self) -> None:
+        self.notifier.group_id = 777
+        message = {"peer_id": 123, "from_id": 55, "text": "[club777|@duty_bot] подмена"}
+
+        self.assertTrue(self.notifier.handle_command_message(message))
+
+        self.assertIn("в личных сообщениях", self.sent.call_args.args[0])
+
+    def test_button_labels_stay_distinct(self) -> None:
+        namesakes = [
+            {"shift": "morning", "name": "Козлов Егор Евгеньевич"},
+            {"shift": "evening", "name": "Козлов Ефим Петрович"},
+        ]
+        same_person = [
+            {"shift": "morning", "name": "Юрчик"},
+            {"shift": "evening", "name": "Юрчик"},
+        ]
+
+        self.assertEqual(self.notifier.person_button_labels(namesakes), ["Козлов Егор", "Козлов Ефим"])
+        self.assertEqual(self.notifier.person_button_labels(same_person), ["Юрчик (утро)", "Юрчик (вечер)"])
 
 
 if __name__ == "__main__":

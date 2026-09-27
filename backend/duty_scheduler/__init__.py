@@ -10,6 +10,7 @@ from .runtime import apply_runtime_config
 from .schedule_service import ScheduleService
 from .settings_api import settings_api_bp
 from .settings_store import SettingsStore, default_settings_path
+from .swaps import SwapService, swaps_path_for
 from .vk_bot import VkNotifier
 
 
@@ -19,7 +20,8 @@ _workers_started = False
 
 def create_app() -> Flask:
     # Настройки из файла перекрывают окружение, поэтому читаем их до конфига.
-    settings_store = SettingsStore(default_settings_path(PROJECT_ROOT))
+    settings_path = default_settings_path(PROJECT_ROOT)
+    settings_store = SettingsStore(settings_path)
     config = load_config(settings_store.overrides())
 
     logger = setup_logging(config)
@@ -35,12 +37,15 @@ def create_app() -> Flask:
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
 
     schedule_service = ScheduleService(config, logger)
-    vk_notifier = VkNotifier(config, logger, schedule_service)
+    swap_service = SwapService(config, logger, schedule_service, swaps_path_for(settings_path))
+    schedule_service.swap_service = swap_service
+    vk_notifier = VkNotifier(config, logger, schedule_service, swap_service)
 
     app.extensions["config"] = config
     app.extensions["logger"] = logger
     app.extensions["schedule_service"] = schedule_service
     app.extensions["vk_notifier"] = vk_notifier
+    app.extensions["swap_service"] = swap_service
     app.extensions["settings_store"] = settings_store
 
     app.register_blueprint(api_bp)

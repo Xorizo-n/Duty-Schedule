@@ -29,6 +29,8 @@ class AppConfig:
     google_update_interval: int
     ntp_update_interval: int
     app_version: str
+    # Только для локальной разработки: False — подмены не объявляются в беседе.
+    vk_swap_announce: bool = True
 
 
 # config.py -> duty_scheduler -> backend -> корень проекта
@@ -105,6 +107,9 @@ def load_config(overrides: dict | None = None) -> AppConfig:
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
         vk_users_file=os.getenv("VK_USERS_FILE", "vk_users.json"),
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
-        app_version="2.8.0",
+        app_version="2.9.0",
+        # Намеренно вне `values`: в настройках его нет, а в docker-compose он не
+        # передаётся — на сервере объявления о подменах всегда включены.
+        vk_swap_announce=_load_bool("VK_SWAP_ANNOUNCE", True),
         **values,
     )
