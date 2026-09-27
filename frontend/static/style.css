@@ -782,6 +782,50 @@ body.board-page.is-ready {
     }
 }
 
+/* --- Облегчённый режим (is-lite от PerformanceGuard) ---
+   Главная нагрузка на слабом железе — размытие стекла поверх анимированного
+   фона: его приходится пересчитывать каждый кадр. В облегчённом режиме
+   размытия нет, панели плотнее, чтобы текст читался так же. */
+
+html.is-lite .panel,
+html.is-lite .glass-effect {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: rgba(14, 24, 66, 0.62);
+}
+
+html.is-lite .day.is-today::after {
+    animation: none;
+    opacity: 0.6;
+}
+
+/* --- «Меньше движения» из настроек системы ---
+   Появление и вспышки убираем, «дыхание» замирает в середине. Плавные смены
+   прозрачности (переходы состояний, фон) остаются — это не движение. */
+
+@media (prefers-reduced-motion: reduce) {
+    .schedule.is-entering .week-labels,
+    .schedule.is-entering .day,
+    .hero-duty > *,
+    .day.is-changed .slot > * {
+        animation: none !important;
+    }
+
+    .day.is-changed::before,
+    .status.is-pulse .status-dot::after {
+        display: none;
+    }
+
+    .day.is-today::after {
+        animation: none;
+        opacity: 0.6;
+    }
+
+    .hero-shift-progress span {
+        transition: none;
+    }
+}
+
 *:focus {
     outline: none;
 }

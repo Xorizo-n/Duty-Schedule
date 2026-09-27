@@ -477,11 +477,12 @@
     transition: opacity var(--sky-fade, 600s) ease-in-out;
 }
 
-/* Утро 8–12: рассвет — индиго в центре, лаванда, персиковые края. */
+/* Утро 8–12: рассвет — индиго в центре, приглушённая лаванда, пыльно-розовые
+   края. По яркости близко к дневной палитре, чтобы не бросаться в глаза. */
 .sky-morning {
-    --c1: #24306f;
-    --c2: #6a5cb2;
-    --c3: #f09a78;
+    --c1: #1b2663;
+    --c2: #4c4a9c;
+    --c3: #b87a86;
 }
 
 /* День 12–16: исходная синяя палитра табло. */
@@ -491,11 +492,12 @@
     --c3: #4389fa;
 }
 
-/* Вечер 16–20: закат — тёмный фиолетовый, пурпур, розовые края. */
+/* Вечер 16–20: закат — тёмный фиолетовый, приглушённый пурпур, тёмно-розовые
+   края. Тоже держится около яркости дневной палитры. */
 .sky-evening {
-    --c1: #2a1652;
-    --c2: #763c9e;
-    --c3: #df6290;
+    --c1: #20134a;
+    --c2: #56338a;
+    --c3: #a4527f;
 }
 
 /* Ночь 20–8: глубокий тёмно-синий, приглушённый. */
@@ -503,4 +505,29 @@
     --c1: #060b22;
     --c2: #111c4a;
     --c3: #1f4686;
+}
+
+/* ===== Облегчённый режим и «меньше движения» =====
+   is-lite ставит PerformanceGuard (performance.js), если табло стабильно
+   не держит 30 кадров/с. prefers-reduced-motion — настройка системы.
+   В обоих случаях узоры замирают на текущем кадре, а не исчезают: фон
+   остаётся тем же, просто неподвижным. Смена пресетов и цвет неба
+   остаются — это редкие плавные переходы прозрачности. */
+
+html.is-lite .background-scene,
+html.is-lite .background-scene *,
+html.is-lite .background-scene::before,
+html.is-lite .background-scene::after,
+html.is-lite .background-animation::before {
+    animation-play-state: paused !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .background-scene,
+    .background-scene *,
+    .background-scene::before,
+    .background-scene::after,
+    .background-animation::before {
+        animation-play-state: paused !important;
+    }
 }

@@ -110,6 +110,10 @@ class BackgroundController {
         if (this.layers.length < 2 || this.presets.length < 2) {
             return;
         }
+        // Скрытая вкладка кадров не рисует: переход застрял бы на полпути.
+        if (document.hidden) {
+            return;
+        }
         // Новый переход до конца предыдущего: уходящая сцена переиспользуется
         // и просто проявляется заново с того места, где была.
         clearTimeout(this.cleanupTimeout);

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" class="board-root">
+<html lang="ru" class="board-root" data-version="{{ version }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -50,6 +50,7 @@
         </a>
     </main>
 
+    <script src="{{ url_for('static', filename='performance.js') }}?v={{ version }}"></script>
     <script src="{{ url_for('static', filename='backgrounds.js') }}?v={{ version }}"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v={{ version }}"></script>
 </body>

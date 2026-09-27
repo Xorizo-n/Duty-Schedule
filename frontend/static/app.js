@@ -23,6 +23,8 @@ const MONTHS_GENITIVE = [
 ];
 const WEEKDAYS_LONG = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15000;
+const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 class DutyScheduleApp {
     constructor() {
@@ -53,6 +55,9 @@ class DutyScheduleApp {
         this.background = null;
         this.heroProgressBars = [];
         this.enteringTimeout = null;
+        this.versionCheckInterval = null;
+        this.isReloading = false;
+        this.performanceGuard = null;
 
         this.init();
     }
@@ -60,6 +65,9 @@ class DutyScheduleApp {
     init() {
         this.fetchData();
         this.dataUpdateInterval = setInterval(() => this.fetchData(), 30000);
+        this.versionCheckInterval = setInterval(() => this.checkVersion(), VERSION_CHECK_INTERVAL_MS);
+        this.performanceGuard = new PerformanceGuard(document.documentElement);
+        this.performanceGuard.start();
         // Фон создаётся до первого tick(): часы сразу выставляют ему оттенок
         // части суток.
         this.background = new BackgroundController(document.querySelector(".background-animation"));
@@ -78,19 +86,7 @@ class DutyScheduleApp {
 
         this.isFetching = true;
         try {
-            const response = await fetch(`/api/data?_=${Date.now()}`, {
-                headers: {
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                },
-                cache: "no-store",
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-
-            const payload = await response.json();
+            const payload = await this.requestJson("/api/data");
             if (!payload.success) {
                 throw new Error("Некорректный ответ сервера");
             }
@@ -101,6 +97,56 @@ class DutyScheduleApp {
             this.handleFetchError(error);
         } finally {
             this.isFetching = false;
+        }
+    }
+
+    // Запрос без кэша и с таймаутом. Без таймаута повисший запрос навсегда
+    // оставил бы isFetching поднятым, и табло перестало бы обновляться.
+    async requestJson(url) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        try {
+            const response = await fetch(`${url}?_=${Date.now()}`, {
+                headers: {
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                },
+                cache: "no-store",
+                signal: controller.signal,
+            });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return await response.json();
+        } catch (error) {
+            if (error.name === "AbortError") {
+                throw new Error(`Сервер не ответил за ${REQUEST_TIMEOUT_MS / 1000} с`);
+            }
+            throw error;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    // После деплоя (watchtower) табло само подхватывает новую версию: иначе
+    // телевизор показывал бы старые JS/CSS, пока страницу не обновят руками.
+    // Версия страницы — в <html data-version>, текущая — в /version.
+    async checkVersion() {
+        const pageVersion = document.documentElement.dataset.version;
+        if (!pageVersion || this.isReloading) {
+            return;
+        }
+        try {
+            const payload = await this.requestJson("/version");
+            if (payload.version && payload.version !== pageVersion) {
+                console.info(`Табло: новая версия ${payload.version} (была ${pageVersion}), перезагрузка`);
+                this.isReloading = true;
+                // Страница гаснет так же плавно, как проявляется при загрузке.
+                document.body.classList.remove("is-ready");
+                setTimeout(() => window.location.reload(), 900);
+            }
+        } catch (error) {
+            // Сервер недоступен — проверим в следующий раз.
         }
     }
 
@@ -585,7 +631,9 @@ class DutyScheduleApp {
     destroy() {
         clearTimeout(this.tickTimeout);
         clearInterval(this.dataUpdateInterval);
+        clearInterval(this.versionCheckInterval);
         this.background.destroy();
+        this.performanceGuard.destroy();
     }
 }
 
