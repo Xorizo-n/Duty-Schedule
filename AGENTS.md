@@ -101,7 +101,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 умолчанию добавляет рабочий каталог в `sys.path`, поэтому `wsgi:app`
 резолвится. Не переносите точки входа из `backend/`, не поправив это.
 
-Версия приложения захардкожена: `AppConfig.app_version = "2.9.0"` в
+Версия приложения захардкожена: `AppConfig.app_version = "2.9.1"` в
 [config.py](backend/duty_scheduler/config.py). Она же прокидывается в `?v=` для
 cache-busting статики в [index.html](frontend/templates/index.html:10). При изменении
 фронтенда версию надо бампать, иначе на табло приедет старый CSS/JS — и

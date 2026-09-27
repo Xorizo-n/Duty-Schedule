@@ -505,9 +505,6 @@ class DutyScheduleApp {
         const head = this.createElement("div", "day-head");
         head.append(this.createElement("span", "day-weekday", day.weekday));
         head.append(this.createElement("span", "day-date", day.date_str));
-        if (day.date === todayIso) {
-            head.append(this.createElement("span", "day-today", "сегодня"));
-        }
         element.append(head);
 
         const slots = {};

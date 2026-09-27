@@ -85,7 +85,6 @@ html.board-root {
     --today-bg: rgba(255, 255, 255, 0.2);
     --today-ring: rgba(255, 255, 255, 0.55);
     --today-shadow: 0 0.5rem 1.6rem rgba(255, 255, 255, 0.14);
-    --today-pill: rgba(255, 255, 255, 0.24);
     --sat-bg: rgba(255, 190, 100, 0.1);
     --sat-head: #ffd08a;
     --hero-shift-bg: rgba(255, 255, 255, 0.07);
@@ -417,18 +416,6 @@ body.board-page.is-ready {
 
 .day-date {
     font-variant-numeric: tabular-nums;
-}
-
-.day-today {
-    align-self: center;
-    padding: 0.08rem 0.5rem;
-    border-radius: 99px;
-    background: var(--today-pill);
-    font-size: 0.62em;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    text-shadow: none;
 }
 
 .slot {

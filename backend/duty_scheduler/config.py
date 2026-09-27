@@ -107,7 +107,7 @@ def load_config(overrides: dict | None = None) -> AppConfig:
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
         vk_users_file=os.getenv("VK_USERS_FILE", "vk_users.json"),
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
-        app_version="2.9.0",
+        app_version="2.9.1",
         # Намеренно вне `values`: в настройках его нет, а в docker-compose он не
         # передаётся — на сервере объявления о подменах всегда включены.
         vk_swap_announce=_load_bool("VK_SWAP_ANNOUNCE", True),
