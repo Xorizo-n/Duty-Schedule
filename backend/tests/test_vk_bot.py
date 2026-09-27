@@ -177,6 +177,9 @@ class VkCommandsTestCase(unittest.TestCase):
         self.config = make_config(project_root=self.project_root)
         self.schedule_service = ScheduleService(self.config, logging.getLogger("vk-commands-schedule-test"))
         self.notifier = VkNotifier(self.config, logging.getLogger("vk-commands-test"), self.schedule_service)
+        # Обычно это заполняет _init_longpoll по groups.getById.
+        self.notifier.group_id = 777
+        self.notifier.group_screen_name = "duty_bot"
         self.now = datetime(2026, 9, 9, 12, 30, 0, tzinfo=self.schedule_service.server_tz)
         patcher = patch.object(self.schedule_service, "get_current_datetime", return_value=self.now)
         patcher.start()
@@ -217,6 +220,9 @@ class VkCommandsTestCase(unittest.TestCase):
 
     def test_resolve_command_ignores_bot_mention_in_text(self) -> None:
         self.assertEqual(self.notifier.resolve_command(None, "[club1|@duty_bot] Завтра!"), "tomorrow")
+
+    def test_resolve_command_ignores_plain_typed_mention(self) -> None:
+        self.assertEqual(self.notifier.resolve_command(None, "@duty_bot неделя"), "week")
 
     def test_resolve_command_returns_none_for_ordinary_message(self) -> None:
         self.assertIsNone(self.notifier.resolve_command(None, "всем привет"))
@@ -265,7 +271,7 @@ class VkCommandsTestCase(unittest.TestCase):
         )
 
     def test_handle_command_message_answers_in_the_configured_peer(self) -> None:
-        message = {"peer_id": 123, "from_id": 55, "text": "сегодня", "payload": None}
+        message = {"peer_id": 123, "from_id": 55, "text": "[club777|@duty_bot] сегодня", "payload": None}
 
         with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}), \
              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
@@ -275,7 +281,7 @@ class VkCommandsTestCase(unittest.TestCase):
         self.assertTrue(json.loads(send_vk_message.call_args.kwargs["keyboard"])["inline"])
 
     def test_handle_command_message_ignores_other_conversations(self) -> None:
-        message = {"peer_id": 999, "from_id": 55, "text": "сегодня"}
+        message = {"peer_id": 999, "from_id": 55, "text": "[club777|@duty_bot] сегодня"}
 
         with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
             self.assertFalse(self.notifier.handle_command_message(message))
@@ -356,6 +362,46 @@ class VkCommandsTestCase(unittest.TestCase):
             self.assertFalse(self.notifier.handle_command_message(message))
 
         self.assertFalse(send_vk_message.called)
+
+    def assert_chat_reply(self, text: str | None, payload: str | None = None) -> str:
+        message = {"peer_id": 123, "from_id": 55, "text": text, "payload": payload}
+        with patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value={}),              patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertTrue(self.notifier.handle_command_message(message))
+        return send_vk_message.call_args.args[0]
+
+    def assert_chat_silence(self, text: str | None) -> None:
+        message = {"peer_id": 123, "from_id": 55, "text": text}
+        with patch.object(self.notifier, "send_vk_message", return_value=True) as send_vk_message:
+            self.assertFalse(self.notifier.handle_command_message(message))
+        self.assertFalse(send_vk_message.called)
+
+    def test_chat_command_without_mention_is_ignored(self) -> None:
+        self.assert_chat_silence("сегодня")
+
+    def test_chat_command_with_typed_mention_is_answered(self) -> None:
+        self.assertIn("Завтра", self.assert_chat_reply("@duty_bot завтра"))
+
+    def test_chat_command_mentioning_by_club_id_is_answered(self) -> None:
+        self.assertIn("Сегодня", self.assert_chat_reply("@club777, сегодня"))
+
+    def test_chat_command_mentioning_someone_else_is_ignored(self) -> None:
+        self.assert_chat_silence("[club555|@other_bot] сегодня")
+        self.assert_chat_silence("[id55|Вася] сегодня")
+        self.assert_chat_silence("@vasya сегодня")
+
+    def test_chat_button_press_needs_no_mention(self) -> None:
+        with patch.object(self.schedule_service, "get_display_weeks", return_value=[]):
+            answer = self.assert_chat_reply("Неделя", payload='{"command": "week"}')
+
+        self.assertEqual(answer, "Расписание ещё не загружено.")
+
+    def test_bare_mention_in_chat_gets_help(self) -> None:
+        self.assertIn("«сегодня»", self.assert_chat_reply("[club777|@duty_bot]"))
+
+    def test_chat_mention_is_not_recognised_before_group_is_known(self) -> None:
+        self.notifier.group_id = None
+
+        self.assert_chat_silence("[club777|@duty_bot] сегодня")
 
 
 if __name__ == "__main__":

@@ -48,8 +48,12 @@ COMMAND_ALIASES = {
     "help": "help",
 }
 COMMAND_NAMES = frozenset(COMMAND_ALIASES.values())
-# "[club1|@club1] сегодня" -> "сегодня": упоминание бота не часть команды.
-VK_MENTION_PATTERN = re.compile(r"\[[^\]]*\|[^\]]*\]")
+# "[club1|@club1] сегодня" или "@duty_bot сегодня" -> "сегодня": упоминание не часть команды.
+VK_MENTION_PATTERN = re.compile(r"\[[^\]]*\|[^\]]*\]|@[\w.]+")
+# Разметка упоминания сообщества: "[club123|..." — id группы во второй группе.
+VK_GROUP_MARKUP_PATTERN = re.compile(r"\[(?:club|public)(\d+)\|", re.IGNORECASE)
+# Упоминание, набранное вручную и не превращённое VK в разметку: "@duty_bot".
+VK_PLAIN_MENTION_PATTERN = re.compile(r"@([\w.]+)")
 
 
 class VkNotifier:
@@ -63,6 +67,10 @@ class VkNotifier:
         self.last_notifications: dict[str, str] = {}
         self.longpoll_lock = threading.Lock()
         self.longpoll_state: dict | None = None
+        # Кто мы в VK — заполняется при подключении long poll, нужно для
+        # распознавания упоминаний бота в беседе.
+        self.group_id: int | None = None
+        self.group_screen_name: str = ""
 
     def start(self) -> None:
         with self.start_lock:
@@ -309,15 +317,24 @@ class VkNotifier:
         return json.dumps(keyboard, ensure_ascii=False)
 
     @staticmethod
-    def resolve_command(payload: str | None, text: str | None) -> str | None:
+    def command_from_payload(payload: str | None) -> str | None:
+        """Команда из payload нажатой кнопки нашей клавиатуры."""
+        if not payload:
+            return None
+        try:
+            parsed = json.loads(payload)
+        except (TypeError, ValueError):
+            return None
+        if isinstance(parsed, dict) and parsed.get("command") in COMMAND_NAMES:
+            return parsed["command"]
+        return None
+
+    @classmethod
+    def resolve_command(cls, payload: str | None, text: str | None) -> str | None:
         """Достаёт команду из payload кнопки, иначе из текста сообщения."""
-        if payload:
-            try:
-                parsed = json.loads(payload)
-            except (TypeError, ValueError):
-                parsed = None
-            if isinstance(parsed, dict) and parsed.get("command") in COMMAND_NAMES:
-                return parsed["command"]
+        button_command = cls.command_from_payload(payload)
+        if button_command:
+            return button_command
 
         normalized = VK_MENTION_PATTERN.sub(" ", text or "")
         normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
@@ -414,6 +431,23 @@ class VkNotifier:
                     user_ids.add(int(vk_id))
         return user_ids
 
+    def is_bot_mentioned(self, text: str | None) -> bool:
+        """Упомянут ли в тексте именно наш бот, а не кто-то другой."""
+        if not self.group_id or not text:
+            return False
+
+        for match in VK_GROUP_MARKUP_PATTERN.finditer(text):
+            if int(match.group(1)) == self.group_id:
+                return True
+
+        own_names = {f"club{self.group_id}", f"public{self.group_id}"}
+        if self.group_screen_name:
+            own_names.add(self.group_screen_name.casefold())
+        return any(
+            match.group(1).casefold() in own_names
+            for match in VK_PLAIN_MENTION_PATTERN.finditer(text)
+        )
+
     def handle_command_message(self, message: dict) -> bool:
         """Отвечает на одно входящее сообщение. True — ответ отправлен."""
         peer_id = message.get("peer_id")
@@ -442,13 +476,16 @@ class VkNotifier:
                 self.logger.info(f"Личное сообщение VK от {from_id} проигнорировано: его нет в списке участников")
                 return False
 
-        command = self.resolve_command(message.get("payload"), message.get("text"))
-        if not command:
-            if not is_private:
-                return False
-            # В беседе люди разговаривают между собой, а в личке любое
-            # сообщение адресовано боту — подсказываем, что он умеет.
-            command = "help"
+        payload, text = message.get("payload"), message.get("text")
+        if not is_private and not self.command_from_payload(payload) and not self.is_bot_mentioned(text):
+            # В беседе люди говорят между собой: отзываемся только на нажатие
+            # кнопки или на сообщение, где бот упомянут. «Сегодня» без
+            # упоминания — это просто реплика, а не команда.
+            return False
+
+        # Сообщение адресовано боту (личка, кнопка или упоминание), но команду
+        # не узнали — подсказываем, что он умеет.
+        command = self.resolve_command(payload, text) or "help"
 
         self.logger.info(f"Команда VK '{command}' от {message.get('from_id')}")
         return self.send_vk_message(
@@ -462,25 +499,30 @@ class VkNotifier:
     # Bots Long Poll
     # ------------------------------------------------------------------
 
-    def _detect_group_id(self) -> int | None:
-        if self.config.vk_group_id:
-            return self.config.vk_group_id
-
+    def _detect_group(self) -> tuple[int, str] | None:
+        """id и короткое имя сообщества: id — для long poll, оба — для упоминаний."""
         # С групповым токеном groups.getById без параметров отдаёт саму группу.
-        response = self.call_api("groups.getById")
+        params = {"group_id": self.config.vk_group_id} if self.config.vk_group_id else {}
+        response = self.call_api("groups.getById", **params)
         groups = response.get("groups") if isinstance(response, dict) else response
         if isinstance(groups, list) and groups and isinstance(groups[0], dict):
             group_id = groups[0].get("id")
             if group_id:
-                return int(group_id)
+                return int(group_id), str(groups[0].get("screen_name") or "")
+
+        if self.config.vk_group_id:
+            # Упоминание разметкой [club<id>|...] узнаем и без короткого имени.
+            return self.config.vk_group_id, ""
 
         self.logger.error("Не удалось определить id группы VK, задайте VK_GROUP_ID")
         return None
 
     def _init_longpoll(self) -> dict | None:
-        group_id = self._detect_group_id()
-        if not group_id:
+        group = self._detect_group()
+        if not group:
             return None
+        group_id, self.group_screen_name = group
+        self.group_id = group_id
 
         # Идемпотентно включаем доставку message_new — без неё long poll молчит.
         self.call_api(
