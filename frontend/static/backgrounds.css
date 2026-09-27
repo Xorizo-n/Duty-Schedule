@@ -1,0 +1,289 @@
+/* ===== Анимированный фон табло =====
+
+   Подложка .background-animation и две сцены .background-scene, между
+   которыми backgrounds.js делает кроссфейд. Сцена получает класс bg-<имя>
+   только на время показа: скрытая сцена пустая и ничего не рисует.
+
+   Пресеты — порты примеров из animations_examples/ с сохранением их
+   геометрии; цвета заменены на тон табло, темп замедлен под телевизор.
+   Где можно, движение идёт через transform — его ведёт видеокарта без
+   перерисовки страницы. */
+
+.background-animation {
+    /* Светлый тон узоров — rgb-триплет, прозрачность задаёт каждый пресет. */
+    --bg-line: 176 212 255;
+
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: -2;
+    background: radial-gradient(circle at 50% 50%, var(--bg-primary) 0%, var(--bg-secondary) 48%, var(--bg-accent) 100%);
+}
+
+/* Мягкие блики поверх градиента. Раньше двигались через background-size и
+   перерисовывали весь экран каждый кадр; теперь — transform большого слоя. */
+.background-animation::before {
+    content: "";
+    position: absolute;
+    inset: -25%;
+    background:
+        radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.1), transparent 22%),
+        radial-gradient(circle at 70% 26%, rgba(163, 213, 255, 0.11), transparent 20%),
+        radial-gradient(circle at 58% 76%, rgba(17, 37, 94, 0.28), transparent 28%);
+    animation: bgGlowDrift 60s ease-in-out infinite alternate;
+    will-change: transform;
+}
+
+.background-animation::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(135deg, rgba(7, 16, 44, 0.08), rgba(255, 255, 255, 0.03) 45%, rgba(7, 16, 44, 0.18));
+}
+
+@keyframes bgGlowDrift {
+    from {
+        transform: translate3d(-4%, -3%, 0) rotate(0deg);
+    }
+    to {
+        transform: translate3d(4%, 3%, 0) rotate(6deg);
+    }
+}
+
+.background-scene {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--bg-fade, 6s) ease-in-out;
+}
+
+.background-scene.is-active {
+    opacity: 1;
+}
+
+/* --- orbs ← cssbackgroundanimation ---
+   Пять концентрических кругов у левого края пульсируют с нарастающей
+   задержкой — по фону расходится волна. Размеры исходника (300…1500px при
+   высоте 700px) переведены в vh. */
+
+.bg-orbs span {
+    --d: 43vh;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: var(--d);
+    height: var(--d);
+    margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
+    border-radius: 50%;
+    background: rgb(255 255 255 / var(--o));
+    animation: bgOrbPulse 6s cubic-bezier(0.6, 0, 0.4, 1) infinite alternate;
+    animation-delay: var(--delay);
+    will-change: transform;
+}
+
+.bg-orbs span:nth-child(1) { --d: 43vh;  --o: 0.13; --delay: 0s; }
+.bg-orbs span:nth-child(2) { --d: 86vh;  --o: 0.1;  --delay: 0.6s; }
+.bg-orbs span:nth-child(3) { --d: 129vh; --o: 0.07; --delay: 1.2s; }
+.bg-orbs span:nth-child(4) { --d: 171vh; --o: 0.045; --delay: 1.8s; }
+.bg-orbs span:nth-child(5) { --d: 214vh; --o: 0.025; --delay: 2.4s; }
+
+@keyframes bgOrbPulse {
+    from {
+        transform: scale(1);
+    }
+    to {
+        transform: scale(1.1);
+    }
+}
+
+/* --- angled ← css-only-animated-angled-pattern ---
+   Узор из шевронов в полосах; соседние полосы едут навстречу друг другу.
+   В исходнике второй слой непрозрачен и просто перекрывает первый; у нас
+   узор полупрозрачный, поэтому слои делят экран взаимодополняющими масками.
+   Сдвиг на ровно один тайл (--s) бесшовен, поэтому двигаем transform. */
+
+.bg-angled {
+    --s: 96px;
+    --g: 16px;
+    --period: 10s;
+}
+
+.bg-angled::before,
+.bg-angled::after {
+    --c: rgb(var(--bg-line));
+    --_l: #0000 calc(33% - 0.866 * var(--g)), var(--c) calc(33.2% - 0.866 * var(--g)) 33%, #0000 34%;
+    --_band: 0 calc(0.866 * var(--s)) / 100% calc(3.466 * var(--s));
+
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(-1 * var(--s));
+    right: calc(-1 * var(--s));
+    opacity: 0.2;
+    background:
+        repeating-linear-gradient(var(--c) 0 var(--g), #0000 0 50%) 0 calc(0.866 * var(--s) - var(--g) / 2),
+        conic-gradient(from -150deg at var(--g) 50%, var(--c) 120deg, #0000 0),
+        linear-gradient(-120deg, var(--_l)),
+        linear-gradient(-60deg, var(--_l));
+    background-size: var(--s) calc(3.466 * var(--s));
+    will-change: transform;
+}
+
+.bg-angled::before {
+    -webkit-mask: linear-gradient(#0000 50%, #000 0) var(--_band);
+    mask: linear-gradient(#0000 50%, #000 0) var(--_band);
+    animation: bgAngledLeft var(--period) linear infinite;
+}
+
+.bg-angled::after {
+    -webkit-mask: linear-gradient(#000 50%, #0000 0) var(--_band);
+    mask: linear-gradient(#000 50%, #0000 0) var(--_band);
+    animation: bgAngledRight var(--period) linear infinite;
+}
+
+@keyframes bgAngledLeft {
+    to {
+        transform: translateX(calc(-1 * var(--s)));
+    }
+}
+
+@keyframes bgAngledRight {
+    to {
+        transform: translateX(var(--s));
+    }
+}
+
+/* --- octagons ← square-vs-octagon ---
+   Восемь конических градиентов рисуют восьмиугольники, которые через
+   @property плавно перетекают в квадраты. В середине цикла цвета меняются
+   местами со сдвигом на клетку: шахматка при этом совпадает сама с собой,
+   поэтому скачка не видно.
+
+   Трюк работает, только если оба цвета непрозрачны — фигуры должны
+   перекрывать цвет подложки. Поэтому узор рисуется двумя сплошными цветами
+   (светлый тон и тёмный фон) на отдельном слое, а тусклость задаёт
+   прозрачность слоя. Прозрачность самой сцены занята кроссфейдом. */
+
+@property --oct-a {
+    syntax: "<angle>";
+    inherits: true;
+    initial-value: 0deg;
+}
+
+@property --oct-p {
+    syntax: "<percentage>";
+    inherits: true;
+    initial-value: 0%;
+}
+
+@property --oct-c1 {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: #0000;
+}
+
+@property --oct-c2 {
+    syntax: "<color>";
+    inherits: true;
+    initial-value: #0000;
+}
+
+.bg-octagons::before {
+    --s: 110px;
+    --on: rgb(var(--bg-line));
+    --off: var(--bg-primary);
+    --_g: #0000, var(--oct-c1) 2deg calc(var(--oct-a) - 2deg), #0000 var(--oct-a);
+
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0.15;
+    background:
+        conic-gradient(from calc(-45deg - var(--oct-a) / 2) at top var(--oct-p) left var(--oct-p), var(--_g)),
+        conic-gradient(from calc(-45deg - var(--oct-a) / 2) at top var(--oct-p) left var(--oct-p), var(--_g)),
+        conic-gradient(from calc(45deg - var(--oct-a) / 2) at top var(--oct-p) right var(--oct-p), var(--_g)),
+        conic-gradient(from calc(45deg - var(--oct-a) / 2) at top var(--oct-p) right var(--oct-p), var(--_g)),
+        conic-gradient(from calc(-135deg - var(--oct-a) / 2) at bottom var(--oct-p) left var(--oct-p), var(--_g)),
+        conic-gradient(from calc(-135deg - var(--oct-a) / 2) at bottom var(--oct-p) left var(--oct-p), var(--_g)),
+        conic-gradient(from calc(135deg - var(--oct-a) / 2) at bottom var(--oct-p) right var(--oct-p), var(--_g)),
+        conic-gradient(from calc(135deg - var(--oct-a) / 2) at bottom var(--oct-p) right var(--oct-p), var(--_g))
+        var(--oct-c2);
+    background-size: calc(2 * var(--s)) calc(2 * var(--s));
+    animation: bgOctagonMorph 7s infinite alternate linear;
+}
+
+@keyframes bgOctagonMorph {
+    0%, 15% {
+        --oct-a: 135deg;
+        --oct-p: 20%;
+        --oct-c1: var(--on);
+        --oct-c2: var(--off);
+        background-position: 0 0, var(--s) var(--s);
+    }
+    45%, 50% {
+        --oct-a: 90deg;
+        --oct-p: 25%;
+        --oct-c1: var(--on);
+        --oct-c2: var(--off);
+        background-position: 0 0, var(--s) var(--s);
+    }
+    50.01%, 55% {
+        --oct-a: 90deg;
+        --oct-p: 25%;
+        --oct-c1: var(--off);
+        --oct-c2: var(--on);
+        background-position: var(--s) 0, 0 var(--s);
+    }
+    85%, 100% {
+        --oct-a: 135deg;
+        --oct-p: 20%;
+        --oct-c1: var(--off);
+        --oct-c2: var(--on);
+        background-position: var(--s) 0, 0 var(--s);
+    }
+}
+
+/* --- mosaic ← no-divs-background-pattern-animation ---
+   Четыре слоя квадратиков в клетке 4em переставляются рывками с паузами
+   (8 шагов, в каждом удержание) — «пятнашки». В исходнике поверх лежит
+   сплошной цвет фона с круглыми окнами; у нас фон — градиент, поэтому те же
+   окна сделаны маской. 1em = размер клетки. */
+
+.bg-mosaic {
+    font-size: 32px;
+    background-image:
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.12) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.16) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.2) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.25) 270deg);
+    background-size: 4em 4em;
+    -webkit-mask: radial-gradient(circle, #000 0.57em, #0000 0.6em) 0 0 / 1em 1em;
+    mask: radial-gradient(circle, #000 0.57em, #0000 0.6em) 0 0 / 1em 1em;
+    animation: bgMosaicX 18s infinite, bgMosaicY 18s -5.625s infinite;
+}
+
+@keyframes bgMosaicX {
+    0%, 7.5%, 100% { background-position-x: 0, 1em, 2em, 3em; }
+    12.5%, 20%     { background-position-x: 1em, 0, 3em, 2em; }
+    25%, 32.5%     { background-position-x: -1em, -2em, 5em, 4em; }
+    37.5%, 45%     { background-position-x: 1em, -4em, 7em, 2em; }
+    50%, 57.5%     { background-position-x: -2em, -5em, 8em, 5em; }
+    62.5%, 70%     { background-position-x: -3em, -4em, 7em, 6em; }
+    75%, 82.5%     { background-position-x: -1em, -2em, 5em, 4em; }
+    87.5%, 95%     { background-position-x: -3em, 0, 3em, 6em; }
+}
+
+@keyframes bgMosaicY {
+    0%, 7.5%, 100% { background-position-y: 0, 1em, 2em, 3em; }
+    12.5%, 20%     { background-position-y: 1em, 0, 3em, 2em; }
+    25%, 32.5%     { background-position-y: -1em, -2em, 5em, 4em; }
+    37.5%, 45%     { background-position-y: 1em, -4em, 7em, 2em; }
+    50%, 57.5%     { background-position-y: -2em, -5em, 8em, 5em; }
+    62.5%, 70%     { background-position-y: -3em, -4em, 7em, 6em; }
+    75%, 82.5%     { background-position-y: -1em, -2em, 5em, 4em; }
+    87.5%, 95%     { background-position-y: -3em, 0, 3em, 6em; }
+}

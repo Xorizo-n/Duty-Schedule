@@ -76,6 +76,8 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 | `backend/requirements.txt` | Зависимости Python |
 | `backend/tests/` | `unittest`, 80 тестов, без сети |
 | `frontend/templates/index.html`, `frontend/static/{app.js,style.css}` | Табло |
+| `frontend/static/{backgrounds.js,backgrounds.css}` | Анимированный фон табло: движок сцен и пресеты |
+| `frontend/static/fonts/` | Шрифт Onest (woff2) и его лицензия |
 | `frontend/templates/settings.html`, `frontend/static/{settings.js,settings.css}` | Страница настроек |
 | `animations_examples/` | Сторонние CSS-примеры-референсы. **Не часть приложения**, в образ не копируются |
 | `deploy.sh`, `docker-compose.yml`, `Dockerfile`, `.github/workflows/docker.yml` | Деплой и CI |
@@ -96,7 +98,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 умолчанию добавляет рабочий каталог в `sys.path`, поэтому `wsgi:app`
 резолвится. Не переносите точки входа из `backend/`, не поправив это.
 
-Версия приложения захардкожена: `AppConfig.app_version = "2.5.0"` в
+Версия приложения захардкожена: `AppConfig.app_version = "2.6.0"` в
 [config.py](backend/duty_scheduler/config.py). Она же прокидывается в `?v=` для
 cache-busting статики в [index.html](frontend/templates/index.html:10). При изменении
 фронтенда версию надо бампать, иначе на табло приедет старый CSS/JS.
@@ -528,10 +530,7 @@ docker exec duty-schedule-app chown appuser:appuser /app/data/credentials.json
   («Таблица не обновляется · данные от …», текст ошибки — в `title`). Сбой
   самого `fetch` — красная строка, сетка тоже остаётся. Сообщение вместо сетки
   — только если данных ещё не было ни разу.
-* Фон: два слоя `.background-scene`, между которыми раз в 2 минуты кроссфейдом
-  переключаются 4 CSS-пресета (`pattern-orbs`, `pattern-angled`,
-  `pattern-octagons`, `pattern-mosaic`). Второй слой всегда предзагружен
-  следующим пресетом.
+* Фон — отдельно, в `backgrounds.css` / `backgrounds.js`, см. ниже.
 * Выходные рендерятся особым путём: для СБ/ВС показывается только `evening`,
   одним слотом на обе строки смен.
 * Несколько дежурных в одной ячейке (суббота) разносятся по строкам:
@@ -552,6 +551,44 @@ docker exec duty-schedule-app chown appuser:appuser /app/data/credentials.json
 `--font-ui` на `body` — действует и на `/settings`. Цифры в часах и датах —
 `font-variant-numeric: tabular-nums` (`tnum` в шрифте есть), иначе часы
 «дрожат» каждую секунду.
+
+### Анимированный фон
+
+[backgrounds.css](frontend/static/backgrounds.css) и
+[backgrounds.js](frontend/static/backgrounds.js), подключаются только на табло.
+
+* **Подложка** `.background-animation`: статичный радиальный градиент, блики в
+  `::before` медленно плывут через `transform`, затемнение в `::after`.
+* **Две сцены** `.background-scene`. `BackgroundController` ставит пресет в
+  скрытую сцену (класс `bg-<имя>`, при нужде — пустые `<span>`), проявляет её
+  и растворяет видимую. Кроссфейд — `opacity` за `BACKGROUND_FADE_MS` (6 с),
+  смена — раз в `BACKGROUND_INTERVAL_MS` (2 мин), следующий пресет случайный,
+  но не тот же. Уходящая сцена после перехода **очищается**: скрытый слой
+  ничего не рисует и не крутит анимаций (раньше предзагруженный слой всё
+  время анимировался невидимым).
+* **Пресеты** — `BACKGROUND_PRESETS` в JS + класс в CSS. Все четыре — порты
+  `animations_examples/` с сохранением геометрии, цвет — `--bg-line` (светлый
+  тон табло), темп замедлен в 2–5 раз:
+
+  | Пресет | Пример | Как устроен |
+  |---|---|---|
+  | `orbs` | cssbackgroundanimation | 5 концентрических кругов у левого края, `scale` с нарастающей задержкой — волна |
+  | `angled` | css-only-animated-angled-pattern | Шевроны; полосы едут навстречу. Два псевдоэлемента с взаимодополняющими масками, сдвиг на тайл через `transform` |
+  | `octagons` | square-vs-octagon | `@property` (`--oct-a/p/c1/c2`) морфит восьмиугольники в квадраты, в середине цикла цвета меняются местами |
+  | `mosaic` | no-divs-background-pattern-animation | 4 слоя квадратиков переставляются рывками с паузами; круглые «окна» исходника сделаны маской |
+
+  Подводные камни портов: в `angled` и `octagons` исходники рассчитаны на
+  **непрозрачные** цвета (верхний слой перекрывает нижний, фигуры —
+  подложку). У нас узор полупрозрачный, поэтому `angled` делит экран двумя
+  масками, а `octagons` рисуется двумя сплошными цветами на `::before` с
+  `opacity`. Прозрачность самой сцены трогать нельзя — она занята
+  кроссфейдом.
+* **Отладка:** `?bg=angled` или `?bg=angled,mosaic` — ограничить набор,
+  `?bgInterval=15` — менять раз в 15 с, клавиша **B** — следующий пресет.
+* Новый пресет = запись в `BACKGROUND_PRESETS` + блок `.bg-<имя>` в CSS.
+  Движение — по возможности через `transform`/`opacity`; анимация
+  `background-position`/`background-size` перерисовывает весь экран на
+  каждом кадре, а поверх лежат панели с `backdrop-filter`.
 
 В правом верхнем углу — ссылка `.settings-link` на `/settings`: шестерня с
 `opacity: 0.12`, на телевизоре её практически не видно. `body` на табло скрывает
@@ -726,14 +763,15 @@ VK-бота и ответы на команды через Bots Long Poll, со�
 
 Пуш в `main` равен деплою в прод (§11), поэтому мержить стоит осознанно.
 
-### Ветка `ui-refresh` (2.5.0, в работе)
+### Ветка `ui-refresh` (2.6.0, в работе)
 
 Обновление интерфейса табло по этапам, каждый проверяется локально:
 
 1. **Каркас табло** — сделано: сетка на весь экран, крупный шрифт, верхний блок
    с часами и сменами, серверный пояс, точечный рендер, ошибки без алерта,
-   две темы на выбор (§8).
-2. Движок фона и точные порты `animations_examples/`.
+   стеклянный стиль и шрифт Onest (§8).
+2. **Движок фона и точные порты `animations_examples/`** — сделано (§8,
+   «Анимированный фон»).
 3. Разнообразие: новые пресеты, оттенок по времени суток, микроанимации.
    Переходы между фонами — только плавные, незаметные.
 4. Надёжность: облегчённый режим при низком FPS, `prefers-reduced-motion`.

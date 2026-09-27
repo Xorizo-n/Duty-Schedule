@@ -50,17 +50,7 @@ class DutyScheduleApp {
 
         this.dataUpdateInterval = null;
         this.tickTimeout = null;
-        this.backgroundSwitchInterval = null;
-
-        this.backgroundLayers = Array.from(document.querySelectorAll(".background-scene"));
-        this.backgroundPresets = [
-            "pattern-orbs",
-            "pattern-angled",
-            "pattern-octagons",
-            "pattern-mosaic",
-        ];
-        this.activeBackgroundPresetIndex = 0;
-        this.visibleBackgroundLayerIndex = 0;
+        this.background = null;
 
         this.init();
     }
@@ -69,61 +59,10 @@ class DutyScheduleApp {
         this.fetchData();
         this.dataUpdateInterval = setInterval(() => this.fetchData(), 30000);
         this.tick();
-        this.initBackgroundAnimation();
+        this.background = new BackgroundController(document.querySelector(".background-animation"));
+        this.background.start();
 
         requestAnimationFrame(() => document.body.classList.add("is-ready"));
-    }
-
-    // --- Фон -------------------------------------------------------------
-
-    initBackgroundAnimation() {
-        if (this.backgroundLayers.length === 0 || this.backgroundPresets.length === 0) {
-            return;
-        }
-
-        this.applyBackgroundPreset(
-            this.backgroundLayers[this.visibleBackgroundLayerIndex],
-            this.backgroundPresets[this.activeBackgroundPresetIndex]
-        );
-        this.backgroundLayers[this.visibleBackgroundLayerIndex].classList.add("is-active");
-
-        if (this.backgroundLayers.length > 1) {
-            const preloadLayerIndex = 1 - this.visibleBackgroundLayerIndex;
-            const preloadPresetIndex =
-                (this.activeBackgroundPresetIndex + 1) % this.backgroundPresets.length;
-            this.applyBackgroundPreset(
-                this.backgroundLayers[preloadLayerIndex],
-                this.backgroundPresets[preloadPresetIndex]
-            );
-        }
-
-        this.backgroundSwitchInterval = setInterval(() => this.rotateBackgroundPreset(), 120000);
-    }
-
-    applyBackgroundPreset(layer, presetClass) {
-        layer.className = "background-scene";
-        layer.classList.add(presetClass);
-    }
-
-    rotateBackgroundPreset() {
-        if (this.backgroundLayers.length < 2 || this.backgroundPresets.length < 2) {
-            return;
-        }
-
-        const currentLayer = this.backgroundLayers[this.visibleBackgroundLayerIndex];
-        const nextLayerIndex = 1 - this.visibleBackgroundLayerIndex;
-        const nextLayer = this.backgroundLayers[nextLayerIndex];
-
-        this.activeBackgroundPresetIndex =
-            (this.activeBackgroundPresetIndex + 1) % this.backgroundPresets.length;
-        this.applyBackgroundPreset(
-            nextLayer,
-            this.backgroundPresets[this.activeBackgroundPresetIndex]
-        );
-
-        nextLayer.classList.add("is-active");
-        currentLayer.classList.remove("is-active");
-        this.visibleBackgroundLayerIndex = nextLayerIndex;
     }
 
     // --- Данные ----------------------------------------------------------
@@ -587,7 +526,7 @@ class DutyScheduleApp {
     destroy() {
         clearTimeout(this.tickTimeout);
         clearInterval(this.dataUpdateInterval);
-        clearInterval(this.backgroundSwitchInterval);
+        this.background.destroy();
     }
 }
 

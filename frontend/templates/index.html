@@ -8,6 +8,7 @@
     <meta http-equiv="Expires" content="0">
     <title>График дежурств</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='backgrounds.css') }}?v={{ version }}">
 </head>
 <body class="board-page">
     <div class="background-animation" aria-hidden="true">
@@ -43,6 +44,7 @@
         </a>
     </main>
 
+    <script src="{{ url_for('static', filename='backgrounds.js') }}?v={{ version }}"></script>
     <script src="{{ url_for('static', filename='app.js') }}?v={{ version }}"></script>
 </body>
 </html>
