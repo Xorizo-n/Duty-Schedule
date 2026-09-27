@@ -51,6 +51,8 @@ class DutyScheduleApp {
         this.dataUpdateInterval = null;
         this.tickTimeout = null;
         this.background = null;
+        this.heroProgressBars = [];
+        this.enteringTimeout = null;
 
         this.init();
     }
@@ -58,9 +60,11 @@ class DutyScheduleApp {
     init() {
         this.fetchData();
         this.dataUpdateInterval = setInterval(() => this.fetchData(), 30000);
-        this.tick();
+        // Фон создаётся до первого tick(): часы сразу выставляют ему оттенок
+        // части суток.
         this.background = new BackgroundController(document.querySelector(".background-animation"));
         this.background.start();
+        this.tick();
 
         requestAnimationFrame(() => document.body.classList.add("is-ready"));
     }
@@ -123,6 +127,7 @@ class DutyScheduleApp {
         } else {
             this.setStatus("ok", `Обновлено ${updated}`);
         }
+        this.restartAnimation(this.statusElement, "is-pulse");
     }
 
     handleFetchError(error) {
@@ -192,6 +197,9 @@ class DutyScheduleApp {
         if (dateIso !== this.renderedDate) {
             this.heroDateElement.textContent = this.formatLongDate(now);
         }
+        if (minuteOfDay !== this.renderedMinute) {
+            this.background.setDaypart(now.getUTCHours());
+        }
         if (this.data && (dateIso !== this.renderedDate || minuteOfDay !== this.renderedMinute)) {
             this.renderAll(false);
         }
@@ -217,6 +225,19 @@ class DutyScheduleApp {
         if (dataChanged || todayIso !== this.renderedDate) {
             this.renderSchedule(this.data.weeks || [], todayIso);
         }
+        this.updateShiftStates(todayIso, minuteOfDay);
+    }
+
+    // Смена, которая идёт сейчас, подсвечивается и в сетке, завершённые
+    // сегодняшние — приглушаются. Пересчитывается раз в минуту.
+    updateShiftStates(todayIso, minuteOfDay) {
+        this.dayElements.forEach((entry, date) => {
+            Object.entries(entry.slots).forEach(([kind, slot]) => {
+                const state = date === todayIso ? this.getShiftState(kind, minuteOfDay) : "";
+                slot.classList.toggle("is-current", state === "current");
+                slot.classList.toggle("is-done", state === "done");
+            });
+        });
     }
 
     getShifts(day) {
@@ -272,9 +293,11 @@ class DutyScheduleApp {
         }));
         const key = JSON.stringify({ heading, note, view });
         if (key === this.heroKey) {
+            this.updateHeroProgress(minuteOfDay);
             return;
         }
         this.heroKey = key;
+        this.heroProgressBars = [];
 
         if (!view.length) {
             this.heroDutyElement.replaceChildren(
@@ -292,7 +315,18 @@ class DutyScheduleApp {
         const cards = this.createElement("div", "hero-shifts");
         view.forEach((shift) => cards.append(this.createHeroShift(shift)));
 
+        // Стартовое значение прогресса ставится до вставки в документ —
+        // иначе полоса «доехала» бы до него анимацией от нуля.
+        this.updateHeroProgress(minuteOfDay);
         this.heroDutyElement.replaceChildren(header, cards);
+    }
+
+    updateHeroProgress(minuteOfDay) {
+        (this.heroProgressBars || []).forEach(({ kind, bar }) => {
+            const shift = SHIFTS[kind];
+            const fraction = (minuteOfDay - shift.start) / (shift.end - shift.start);
+            bar.style.transform = `scaleX(${Math.min(1, Math.max(0, fraction)).toFixed(4)})`;
+        });
     }
 
     getShiftState(kind, minuteOfDay) {
@@ -324,6 +358,14 @@ class DutyScheduleApp {
         shift.names.forEach((name) => names.append(this.createElement("span", "hero-person", name)));
 
         card.append(top, names);
+
+        if (shift.state === "current") {
+            const track = this.createElement("div", "hero-shift-progress");
+            const bar = this.createElement("span");
+            track.append(bar);
+            card.append(track);
+            this.heroProgressBars.push({ kind: shift.kind, bar });
+        }
         return card;
     }
 
@@ -348,11 +390,17 @@ class DutyScheduleApp {
         this.scheduleLayoutKey = layoutKey;
         this.dayElements.clear();
         const fragment = document.createDocumentFragment();
-        weeks.forEach((week) => fragment.append(this.createWeek(week, todayIso)));
+        weeks.forEach((week, weekIndex) => fragment.append(this.createWeek(week, todayIso, weekIndex)));
         this.scheduleElement.replaceChildren(fragment);
+
+        // Каскадное появление ячеек — только при полной перестройке сетки
+        // (загрузка и смена дня), точечные обновления его не запускают.
+        this.restartAnimation(this.scheduleElement, "is-entering");
+        clearTimeout(this.enteringTimeout);
+        this.enteringTimeout = setTimeout(() => this.scheduleElement.classList.remove("is-entering"), 2500);
     }
 
-    createWeek(week, todayIso) {
+    createWeek(week, todayIso, weekIndex) {
         const element = this.createElement("div", "week panel");
         const containsToday = week.some((day) => day.date === todayIso);
 
@@ -372,9 +420,14 @@ class DutyScheduleApp {
             label.append(this.createElement("span", "shift-label-time", SHIFTS[kind].short));
             labels.append(label);
         });
+        labels.style.setProperty("--i", weekIndex * 7);
         element.append(labels);
 
-        week.forEach((day) => element.append(this.createDay(day, todayIso)));
+        week.forEach((day, dayIndex) => {
+            const dayElement = this.createDay(day, todayIso);
+            dayElement.style.setProperty("--i", weekIndex * 7 + dayIndex + 1);
+            element.append(dayElement);
+        });
         return element;
     }
 
@@ -421,10 +474,8 @@ class DutyScheduleApp {
             return;
         }
         if (this.fillDay(entry, day)) {
-            // Хук для анимации изменений (этап 3): ячейка помечается, CSS решает.
-            entry.element.classList.remove("is-changed");
-            void entry.element.offsetWidth;
-            entry.element.classList.add("is-changed");
+            // В ячейке поменялись люди — она мягко вспыхивает.
+            this.restartAnimation(entry.element, "is-changed");
         }
     }
 
@@ -477,6 +528,14 @@ class DutyScheduleApp {
     }
 
     // --- Утилиты ---------------------------------------------------------
+
+    // CSS-анимация по классу проигрывается заново только если класс снять,
+    // дать браузеру это увидеть (reflow) и поставить снова.
+    restartAnimation(element, className) {
+        element.classList.remove(className);
+        void element.offsetWidth;
+        element.classList.add(className);
+    }
 
     createElement(tag, className, text) {
         const element = document.createElement(tag);

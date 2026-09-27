@@ -574,6 +574,151 @@ body.board-page.is-ready {
     color: var(--err);
 }
 
+/* --- Микроанимации ---
+   Всё сдержанно: табло смотрят издалека и подолгу, движение не должно
+   отвлекать от расписания. Анимируются только opacity и transform. */
+
+/* Каскадное появление ячеек при построении сетки. Задан только «from» —
+   конечное состояние берётся из обычных стилей (прошедший день так и
+   остаётся приглушённым). */
+.schedule.is-entering .week-labels,
+.schedule.is-entering .day {
+    animation: cellEnter 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+@keyframes cellEnter {
+    from {
+        opacity: 0;
+        transform: translateY(0.8rem);
+    }
+}
+
+/* Новое содержимое главного блока проявляется, а не подменяется рывком. */
+.hero-duty > * {
+    animation: heroEnter 0.6s ease-out both;
+}
+
+@keyframes heroEnter {
+    from {
+        opacity: 0;
+        transform: translateY(0.4rem);
+    }
+}
+
+/* Ячейка, в которой поменялись люди: мягкая вспышка и проявление имён. */
+.day.is-changed::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.28);
+    pointer-events: none;
+    animation: cellFlash 2.4s ease-out forwards;
+}
+
+.day.is-changed .slot > * {
+    animation: slotEnter 0.9s ease-out both;
+}
+
+@keyframes cellFlash {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes slotEnter {
+    from {
+        opacity: 0;
+        transform: scale(0.96);
+    }
+}
+
+/* Сегодняшний день медленно «дышит» свечением. */
+.day.is-today::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 1.6rem 0.25rem rgba(255, 255, 255, 0.28);
+    opacity: 0;
+    pointer-events: none;
+    animation: todayGlow 5s ease-in-out infinite alternate;
+}
+
+@keyframes todayGlow {
+    to {
+        opacity: 1;
+    }
+}
+
+/* Смена, которая идёт сейчас, и завершённые — в сетке. */
+.slot {
+    border-radius: 0.6rem;
+    transition: background 1s ease, opacity 1s ease, box-shadow 1s ease;
+}
+
+.slot.is-current {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.slot.is-done {
+    opacity: 0.5;
+}
+
+/* Прогресс текущей смены в главном блоке. Растёт раз в минуту. */
+.hero-shift {
+    position: relative;
+    overflow: hidden;
+}
+
+.hero-shift-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 0.25rem;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.hero-shift-progress span {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(95, 224, 160, 0.55), rgba(95, 224, 160, 0.95));
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform 1.2s ease;
+}
+
+/* Точка статуса «расходится кругом» при каждом успешном опросе. */
+.status-dot {
+    position: relative;
+}
+
+.status.is-pulse .status-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: inherit;
+    animation: statusPing 1.4s ease-out forwards;
+}
+
+@keyframes statusPing {
+    from {
+        opacity: 0.7;
+        transform: scale(1);
+    }
+    to {
+        opacity: 0;
+        transform: scale(3.2);
+    }
+}
+
 /* Вход в настройки. На табло его быть почти не должно: заметная иконка в углу
    отвлекает от расписания, поэтому в покое она почти прозрачна. */
 .settings-link {

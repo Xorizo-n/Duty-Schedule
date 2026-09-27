@@ -287,3 +287,220 @@
     75%, 82.5%     { background-position-y: -1em, -2em, 5em, 4em; }
     87.5%, 95%     { background-position-y: -3em, 0, 3em, 6em; }
 }
+
+/* ===== Собственные пресеты ===== */
+
+/* --- aurora ---
+   Четыре больших мягких пятна разных оттенков медленно дрейфуют и
+   смешиваются через screen — «северное сияние». Пятна — радиальные
+   градиенты без filter: blur, движение — только transform. */
+
+.bg-aurora span {
+    position: absolute;
+    width: 75vmax;
+    height: 75vmax;
+    left: var(--x);
+    top: var(--y);
+    margin: -37.5vmax 0 0 -37.5vmax;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(var(--c) / 0.26) 0%, rgb(var(--c) / 0.1) 38%, transparent 66%);
+    mix-blend-mode: screen;
+    animation: bgAuroraDrift var(--dur) ease-in-out infinite alternate;
+    animation-delay: var(--delay);
+    will-change: transform;
+}
+
+.bg-aurora span:nth-child(1) { --c: 80 200 255;  --x: 20%; --y: 30%; --dur: 46s; --delay: 0s; }
+.bg-aurora span:nth-child(2) { --c: 150 110 255; --x: 78%; --y: 25%; --dur: 58s; --delay: -12s; }
+.bg-aurora span:nth-child(3) { --c: 60 220 200;  --x: 60%; --y: 80%; --dur: 52s; --delay: -25s; }
+.bg-aurora span:nth-child(4) { --c: 90 130 255;  --x: 15%; --y: 85%; --dur: 64s; --delay: -40s; }
+
+@keyframes bgAuroraDrift {
+    0% {
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+        transform: translate3d(12vw, -8vh, 0) scale(1.15);
+    }
+    100% {
+        transform: translate3d(-8vw, 10vh, 0) scale(0.92);
+    }
+}
+
+/* --- waves ---
+   Три слоя волн у нижнего края, каждый со своей длиной волны, скоростью и
+   направлением. Волна — периодический SVG-путь, повторённый по горизонтали;
+   слой шире экрана на одну волну (--w) и сдвигается ровно на неё. */
+
+.bg-waves span {
+    --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 200' preserveAspectRatio='none'%3E%3Cpath d='M0 100 C150 40 450 40 600 100 S1050 160 1200 100 V200 H0Z' fill='%23b0d4ff'/%3E%3C/svg%3E");
+
+    position: absolute;
+    left: 0;
+    right: calc(-1 * var(--w));
+    bottom: 0;
+    height: var(--h);
+    background: var(--wave) 0 0 / var(--w) 100% repeat-x;
+    opacity: var(--o);
+    animation: bgWaveLeft var(--dur) linear infinite;
+    animation-direction: var(--dir, normal);
+    will-change: transform;
+}
+
+.bg-waves span:nth-child(1) { --w: 1600px; --h: 46vh; --o: 0.06;  --dur: 70s; }
+.bg-waves span:nth-child(2) { --w: 1100px; --h: 34vh; --o: 0.08;  --dur: 48s; --dir: reverse; }
+.bg-waves span:nth-child(3) { --w: 800px;  --h: 22vh; --o: 0.1;   --dur: 36s; }
+
+@keyframes bgWaveLeft {
+    to {
+        transform: translateX(calc(-1 * var(--w)));
+    }
+}
+
+/* --- stripes ---
+   Мягкие диагональные полосы: широкие и медленные в одну сторону, тонкие и
+   ещё медленнее — в другую. Полосы под 45° повторяются по горизонтали через
+   период × √2 — на столько и сдвигается слой, поэтому шов не виден. */
+
+.bg-stripes::before,
+.bg-stripes::after {
+    --shift: calc(var(--p) * 1.41421356);
+
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(-1 * var(--shift));
+    right: calc(-1 * var(--shift));
+    will-change: transform;
+}
+
+.bg-stripes::before {
+    --p: 180px;
+    background: repeating-linear-gradient(
+        45deg,
+        rgb(var(--bg-line) / 0) 0,
+        rgb(var(--bg-line) / 0.09) calc(var(--p) * 0.25),
+        rgb(var(--bg-line) / 0) calc(var(--p) * 0.5),
+        rgb(var(--bg-line) / 0) var(--p)
+    );
+    animation: bgStripesLeft 26s linear infinite;
+}
+
+.bg-stripes::after {
+    --p: 46px;
+    background: repeating-linear-gradient(
+        45deg,
+        rgb(var(--bg-line) / 0.06) 0 2px,
+        rgb(var(--bg-line) / 0) 2px var(--p)
+    );
+    animation: bgStripesRight 40s linear infinite;
+}
+
+@keyframes bgStripesLeft {
+    to {
+        transform: translateX(calc(-1 * var(--shift)));
+    }
+}
+
+@keyframes bgStripesRight {
+    to {
+        transform: translateX(var(--shift));
+    }
+}
+
+/* --- bokeh ---
+   Размытые огоньки медленно всплывают снизу вверх, проявляясь и угасая.
+   Позиции, размеры и скорости задаёт backgrounds.js случайно, отрицательная
+   задержка раскладывает огоньки по всему экрану с первой секунды. */
+
+.bg-bokeh span {
+    position: absolute;
+    left: var(--x);
+    top: 100%;
+    width: var(--size);
+    height: var(--size);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgb(var(--bg-line) / var(--o)) 0%, rgb(var(--bg-line) / calc(var(--o) * 0.5)) 45%, transparent 70%);
+    opacity: 0;
+    animation: bgBokehRise var(--dur) linear infinite;
+    animation-delay: var(--delay);
+    will-change: transform, opacity;
+}
+
+@keyframes bgBokehRise {
+    0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0);
+    }
+    12% {
+        opacity: 1;
+    }
+    85% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: translate3d(var(--dx), calc(-100vh - var(--size) * 1.5), 0);
+    }
+}
+
+/* --- Небо: основной цвет по времени суток ---
+   У каждой части суток свой градиент подложки. При смене новый слой
+   проявляется поверх старого, а старый остаётся под ним непрозрачным до
+   конца перехода — цвет перетекает без провала яркости посередине.
+   Переход — только opacity, перерисовки экрана нет. Слой лежит под
+   бликами и сценами (z-index: -1 внутри контекста наложения подложки). */
+
+.background-sky {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+}
+
+.background-sky > div {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: radial-gradient(circle at 50% 50%, var(--c1) 0%, var(--c2) 48%, var(--c3) 100%);
+    will-change: opacity;
+}
+
+.background-sky > div.is-previous {
+    z-index: 1;
+    opacity: 1;
+}
+
+.background-sky > div.is-current {
+    z-index: 2;
+    opacity: 1;
+    transition: opacity var(--sky-fade, 600s) ease-in-out;
+}
+
+/* Утро 8–12: рассвет — индиго в центре, лаванда, персиковые края. */
+.sky-morning {
+    --c1: #24306f;
+    --c2: #6a5cb2;
+    --c3: #f09a78;
+}
+
+/* День 12–16: исходная синяя палитра табло. */
+.sky-day {
+    --c1: #132661;
+    --c2: #3d4aa6;
+    --c3: #4389fa;
+}
+
+/* Вечер 16–20: закат — тёмный фиолетовый, пурпур, розовые края. */
+.sky-evening {
+    --c1: #2a1652;
+    --c2: #763c9e;
+    --c3: #df6290;
+}
+
+/* Ночь 20–8: глубокий тёмно-синий, приглушённый. */
+.sky-night {
+    --c1: #060b22;
+    --c2: #111c4a;
+    --c3: #1f4686;
+}
