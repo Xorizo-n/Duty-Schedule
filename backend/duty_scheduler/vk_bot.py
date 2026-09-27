@@ -711,7 +711,7 @@ class VkNotifier:
                 "бот повторит сам."
             )
 
-        if self.config.vk_peer_id:
+        if self.config.vk_peer_id and self.config.vk_swap_announce:
             mapping = self.load_vk_user_mapping()
             self.send_vk_message(
                 f"Подмена: {where} вместо {self.get_vk_mention(slot['name'], mapping)} "

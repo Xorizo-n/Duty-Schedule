@@ -4,12 +4,15 @@ from dataclasses import replace
 from datetime import date, datetime
 import json
 import logging
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+from duty_scheduler.config import load_config
 from duty_scheduler.schedule_service import ScheduleService
+from duty_scheduler.settings_store import SETTING_FIELDS
 from duty_scheduler.swaps import SwapService
 from duty_scheduler.vk_bot import VkNotifier
 
@@ -502,6 +505,29 @@ class VkSwapDialogTestCase(unittest.TestCase):
             chat_call.args[0],
             "Подмена: 03.09 (ЧТ), вечер вместо [id202|Афонин Кирилл] дежурит [id101|Булатов Иван].",
         )
+
+    def test_swap_is_not_announced_in_chat_when_flag_is_off(self) -> None:
+        self.notifier.config = replace(self.config, vk_swap_announce=False)
+        self.dm("подмена")
+        self.dm(command="swap_date", date="2026-09-03")
+        self.dm(command="swap_person", date="2026-09-03", index=1)
+
+        answer, _ = self.dm(command="swap_confirm")
+
+        self.assertIn("Готово", answer)
+        self.assertEqual(self.sheet.cell(4, 5).value, "Булатов Иван Олегович")
+        # Все сообщения ушли только в личку — в беседу ничего.
+        self.assertTrue(all(call.kwargs.get("peer_id") == self.CALLER_ID for call in self.sent.call_args_list))
+
+    def test_swap_announce_flag_is_read_from_env_only(self) -> None:
+        with patch.dict(os.environ, {"VK_SWAP_ANNOUNCE": "0"}):
+            self.assertFalse(load_config().vk_swap_announce)
+            # Значение из файла настроек его не включит и не выключит.
+            self.assertFalse(load_config({"vk_swap_announce": True}).vk_swap_announce)
+        with patch.dict(os.environ):
+            os.environ.pop("VK_SWAP_ANNOUNCE", None)
+            self.assertTrue(load_config().vk_swap_announce)
+        self.assertNotIn("vk_swap_announce", {field.key for field in SETTING_FIELDS})
 
     def test_date_can_be_typed(self) -> None:
         self.dm("подмена")

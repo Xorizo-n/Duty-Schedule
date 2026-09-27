@@ -75,7 +75,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 | `backend/serve.py` | Кроссплатформенный лаунчер (waitress / gunicorn) |
 | `backend/container_start.py` | Entrypoint контейнера: `chown` логов → сброс прав на `appuser` → gunicorn |
 | `backend/requirements.txt` | Зависимости Python |
-| `backend/tests/` | `unittest`, 131 тест, без сети |
+| `backend/tests/` | `unittest`, 133 теста, без сети |
 | `frontend/templates/index.html`, `frontend/static/{app.js,style.css}` | Табло |
 | `frontend/static/{backgrounds.js,backgrounds.css}` | Анимированный фон табло: движок сцен и пресеты |
 | `frontend/static/performance.js` | `PerformanceGuard` — облегчённый режим при низком FPS |
@@ -432,7 +432,8 @@ query string, поэтому токен не оседает в логах про
 3. **Человек** — «Подмена: 03.10 (ПТ), вечер. Вместо: … Дежурит: … (вы)» и
    «Подтвердить» / «Отмена».
 4. **«Подтвердить»** — запись; ответ в личку, в беседу `VK_PEER_ID` — «Подмена:
-   … вместо @старый дежурит @новый» с упоминаниями обоих. Согласия того, кого
+   … вместо @старый дежурит @новый» с упоминаниями обоих (локально глушится
+   `VK_SWAP_ANNOUNCE=0`, §7). Согласия того, кого
    заменяют, не спрашиваем — сообщение в беседе и есть контроль.
 
 Кого нельзя подменить: прошедшие дни, воскресенье, сегодняшнюю смену, которая
@@ -506,7 +507,9 @@ query string, поэтому токен не оседает в логах про
 4. **Локальный запуск = живые внешние вызовы.** Приложение реально ходит в
    Google Sheets и NTP. Если запускаете рядом со временем 10:00/19:00 — глушите
    VK через пустые `VK_BOT_TOKEN`/`VK_PEER_ID`, иначе в рабочую беседу уйдёт
-   тестовое сообщение. Одного пустого `VK_PEER_ID` мало: с живым токеном
+   тестовое сообщение. Проверяя подмену с живым токеном, ставьте
+   `VK_SWAP_ANNOUNCE=0` — иначе о тестовой подмене узнает рабочая беседа
+   (запись в настоящую таблицу при этом всё равно будет). Одного пустого `VK_PEER_ID` мало: с живым токеном
    локальный экземпляр подключится к long poll и начнёт отвечать в личке
    наравне с продом — люди получат ответы дважды. Глушите именно токен.
 
@@ -623,6 +626,7 @@ docker exec duty-schedule-app chown appuser:appuser /app/data/credentials.json
 | `VK_USERS_FILE` | `vk_users.json` | В контейнере `/app/data/vk_users.json` |
 | `VK_COMMANDS_ENABLED` | `1` | Кнопки и ответы бота в беседе и в личке. `0` → только рассылка уведомлений |
 | `VK_GROUP_ID` | — | Обычно определяется по токену; задавать только если не определился |
+| `VK_SWAP_ANNOUNCE` | `1` | **Только для локальной разработки.** `0` — подмена не объявляется в беседе (ответ в личку и запись в таблицу остаются). Нет ни в `docker-compose.yml`, ни на `/settings`: на сервере всегда `1` |
 | `SETTINGS_FILE` | `<корень>/settings.json` | В контейнере — `/app/data/settings.json` |
 | `CONSOLE_LOG_LEVEL` | `INFO` | |
 | `FILE_LOG_LEVEL` | `WARNING` | |
@@ -836,7 +840,7 @@ DOM-методами, без `innerHTML` с данными. Загрузка к�
 
 ## 9. Тесты
 
-`unittest`, 131 тест, сеть не трогают: `backend/tests/helpers.py::make_config` даёт
+`unittest`, 133 теста, сеть не трогают: `backend/tests/helpers.py::make_config` даёт
 конфиг на `tempfile`, Google Sheets и VK замоканы.
 
 ```bash
