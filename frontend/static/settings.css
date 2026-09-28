@@ -14,7 +14,7 @@ body.settings-page {
     -moz-user-select: auto;
     -ms-user-select: auto;
     user-select: auto;
-    color: white;
+    color: var(--text);
     /* Анимированных слоёв табло здесь нет намеренно: страницу настроек
        открывают и подолгу держат, вечная CSS-анимация на фоне формы только
        отвлекает. Тот же градиент, но спокойный. */
@@ -97,7 +97,7 @@ body.settings-page {
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(9, 20, 54, 0.45);
-    color: white;
+    color: var(--text);
     font-size: 1em;
     font-family: inherit;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -114,7 +114,7 @@ body.settings-page {
 .settings-field select option {
     /* Список раскрывается средствами ОС — там прозрачного фона не бывает. */
     background: #132661;
-    color: white;
+    color: var(--text);
 }
 
 .settings-field-hint {
@@ -165,7 +165,7 @@ body.settings-page {
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(67, 137, 250, 0.45);
-    color: white;
+    color: var(--text);
     font-size: 0.95em;
     font-family: inherit;
     text-decoration: none;
@@ -175,7 +175,7 @@ body.settings-page {
 
 .settings-button:hover {
     background: rgba(67, 137, 250, 0.65);
-    color: white;
+    color: var(--text);
 }
 
 .settings-button:active {
@@ -247,7 +247,7 @@ body.settings-page {
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(255, 255, 255, 0.08);
-    color: white;
+    color: var(--text);
     font-family: inherit;
     cursor: pointer;
 }
@@ -273,6 +273,14 @@ body.settings-page {
 .settings-users-row input {
     padding: 8px 10px;
     font-size: 0.95em;
+}
+
+/* Под строкой, во всю ширину: «добавлен из беседы», «нет в графике». */
+.settings-users-notes {
+    grid-column: 1 / -1;
+    margin: -2px 0 4px;
+    font-size: 0.8em;
+    color: rgba(255, 200, 150, 0.95);
 }
 
 .settings-users-remove {

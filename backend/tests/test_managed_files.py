@@ -6,6 +6,7 @@ import tempfile
 import unittest
 
 from duty_scheduler.managed_files import (
+    add_vk_chat_members,
     describe_credentials,
     describe_path,
     read_vk_users,
@@ -67,8 +68,8 @@ class ManagedFilesTestCase(unittest.TestCase):
         self.assertEqual(
             read_vk_users(path),
             [
-                {"name": "Иван Иванов", "id": 101, "label": ""},
-                {"name": "Пётр Петров", "id": 202, "label": "Пётр"},
+                {"name": "Иван Иванов", "id": 101, "label": "", "auto": False},
+                {"name": "Пётр Петров", "id": 202, "label": "Пётр", "auto": False},
             ],
         )
 
@@ -111,8 +112,50 @@ class ManagedFilesTestCase(unittest.TestCase):
         write_vk_users(path, {"Иван Иванов": 101})
 
         self.assertTrue(path.is_file())
-        self.assertEqual(read_vk_users(path), [{"name": "Иван Иванов", "id": 101, "label": ""}])
+        self.assertEqual(read_vk_users(path), [{"name": "Иван Иванов", "id": 101, "label": "", "auto": False}])
         self.assertFalse(path.with_suffix(".json.tmp").exists())
+
+    def test_auto_mark_survives_a_round_trip_through_the_form(self) -> None:
+        mapping = validate_vk_users(
+            [
+                {"name": "Сидоров Олег", "id": 303, "label": "", "auto": True},
+                {"name": "Иван Иванов", "id": 101, "label": "", "auto": False},
+            ]
+        )
+
+        self.assertEqual(mapping, {"Сидоров Олег": {"id": 303, "auto": True}, "Иван Иванов": 101})
+
+    def test_chat_members_are_added_once_and_known_ids_are_kept(self) -> None:
+        path = self.root / "vk_users.json"
+        # Администратор уже переименовал человека с id 101 — бот его не трогает.
+        write_vk_users(path, {"Иванов Иван": 101})
+
+        added = add_vk_chat_members(
+            path,
+            [
+                {"id": 101, "name": "Ваня Иванов"},
+                {"id": 202, "name": "Петров Пётр"},
+                {"id": 303, "name": "Иванов Иван"},
+            ],
+        )
+
+        self.assertEqual(added, ["Петров Пётр", "Иванов Иван (id303)"])
+        self.assertEqual(
+            json.loads(path.read_text(encoding="utf-8")),
+            {
+                "Иванов Иван": 101,
+                "Петров Пётр": {"id": 202, "auto": True},
+                "Иванов Иван (id303)": {"id": 303, "auto": True},
+            },
+        )
+        # Повторная сверка ничего не меняет.
+        self.assertEqual(add_vk_chat_members(path, [{"id": 202, "name": "Петров Пётр"}]), [])
+
+    def test_chat_members_create_the_file_if_there_was_none(self) -> None:
+        path = self.root / "data" / "vk_users.json"
+
+        self.assertEqual(add_vk_chat_members(path, [{"id": 5, "name": ""}]), ["id5"])
+        self.assertEqual(read_vk_users(path), [{"name": "id5", "id": 5, "label": "", "auto": True}])
 
     # ------------------------------------------------------------------
     # credentials.json

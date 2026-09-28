@@ -11,7 +11,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .config import AppConfig
+from .managed_files import add_vk_chat_members, resolve_path
 from .schedule_service import SATURDAY, SUNDAY, ScheduleService
+from .settings_store import SettingsError
 from .swaps import RESULT_WRITTEN, SwapError, SwapService
 
 
@@ -23,6 +25,10 @@ VK_API_URL = "https://api.vk.com/method/"
 # peer_id бесед начинается с 2000000000, всё меньше — личные диалоги.
 VK_CHAT_PEER_OFFSET = 2_000_000_000
 LONGPOLL_WAIT_SECONDS = 25
+# Как часто сверять участников беседы со списком vk_users.json. Приход новых
+# людей ловится сразу по служебному сообщению — это страховка на пропуски.
+CHAT_MEMBERS_SYNC_SECONDS = 3600
+CHAT_JOIN_ACTIONS = frozenset({"chat_invite_user", "chat_invite_user_by_link"})
 
 # Подписи кнопок клавиатуры и текстовые синонимы тех же команд.
 COMMAND_BUTTONS = (
@@ -95,6 +101,7 @@ class VkNotifier:
         # распознавания упоминаний бота в беседе.
         self.group_id: int | None = None
         self.group_screen_name: str = ""
+        self.last_members_sync = 0.0
 
     def start(self) -> None:
         with self.start_lock:
@@ -113,6 +120,8 @@ class VkNotifier:
         # Токен или группа могли смениться — сессия long poll больше не наша.
         with self.longpoll_lock:
             self.longpoll_state = None
+        # Беседа могла смениться — сверим её участников при переподключении.
+        self.last_members_sync = 0.0
 
     def _notification_loop(self) -> None:
         while True:
@@ -857,6 +866,81 @@ class VkNotifier:
         state["ts"] = payload.get("ts", state["ts"])
         return payload.get("updates") or []
 
+    # ------------------------------------------------------------------
+    # Участники беседы → vk_users.json
+    # ------------------------------------------------------------------
+
+    def fetch_chat_members(self) -> list[dict] | None:
+        """Люди из беседы VK_PEER_ID: `[{id, name}]`, где name — «Фамилия Имя» со страницы.
+
+        None — VK не отдал список: чаще всего бот не администратор беседы.
+        """
+        response = self.call_api("messages.getConversationMembers", peer_id=self.config.vk_peer_id)
+        if not isinstance(response, dict):
+            self.logger.error(
+                "Не удалось получить участников беседы VK: сообщество должно быть "
+                "администратором беседы"
+            )
+            return None
+
+        profiles = {
+            profile["id"]: profile
+            for profile in response.get("profiles") or []
+            if isinstance(profile, dict) and isinstance(profile.get("id"), int)
+        }
+        members = []
+        for item in response.get("items") or []:
+            member_id = item.get("member_id") if isinstance(item, dict) else None
+            # Отрицательные id — сообщества и боты, в том числе мы сами.
+            if not isinstance(member_id, int) or member_id <= 0:
+                continue
+            profile = profiles.get(member_id) or {}
+            if profile.get("deactivated"):
+                # Удалённые и заблокированные страницы.
+                continue
+            name = f"{profile.get('last_name', '')} {profile.get('first_name', '')}".strip()
+            members.append({"id": member_id, "name": name})
+        return members
+
+    def sync_chat_members(self) -> list[str]:
+        """Дописывает в vk_users.json участников беседы, которых там нет.
+
+        Так у всех в беседе появляется доступ в личку, а упоминания в
+        напоминаниях работают, если имя на странице VK совпало с таблицей. Не
+        совпало — администратор правит имя на /settings (там такие помечены).
+        Из списка никто не удаляется. Возвращает добавленные имена.
+        """
+        self.last_members_sync = time.time()
+        peer_id = str(self.config.vk_peer_id or "").strip()
+        # Участники бывают только у беседы; личный диалог в VK_PEER_ID пропускаем.
+        if not self.config.vk_bot_token or not peer_id.isdigit() or int(peer_id) < VK_CHAT_PEER_OFFSET:
+            return []
+
+        members = self.fetch_chat_members()
+        if members is None:
+            return []
+
+        path = resolve_path(self.config.project_root, self.config.vk_users_file)
+        try:
+            added = add_vk_chat_members(path, members)
+        except (SettingsError, OSError) as exc:
+            self.logger.error(f"Не удалось дописать участников беседы в {path}: {exc}")
+            return []
+
+        if added:
+            self.logger.info(f"Из беседы в список участников VK добавлены: {', '.join(added)}")
+        return added
+
+    def handle_chat_action(self, message: dict) -> bool:
+        """Служебное сообщение беседы. True — это приход человека, список сверен."""
+        action = message.get("action") if isinstance(message.get("action"), dict) else {}
+        if action.get("type") not in CHAT_JOIN_ACTIONS:
+            return False
+        if str(message.get("peer_id")) != str(self.config.vk_peer_id or ""):
+            return False
+        self.sync_chat_members()
+        return True
+
     def _commands_loop(self) -> None:
         while True:
             # Беседа не обязательна: без неё бот всё равно отвечает в личке.
@@ -875,12 +959,16 @@ class VkNotifier:
                     with self.longpoll_lock:
                         self.longpoll_state = state
 
+                if time.time() - self.last_members_sync >= CHAT_MEMBERS_SYNC_SECONDS:
+                    # Первый раз — сразу после подключения, дальше раз в час.
+                    self.sync_chat_members()
+
                 for update in self._poll_updates(state):
                     if update.get("type") != "message_new":
                         continue
                     update_object = update.get("object") or {}
                     message = update_object.get("message") or update_object
-                    if isinstance(message, dict):
+                    if isinstance(message, dict) and not self.handle_chat_action(message):
                         self.handle_command_message(message)
             except Exception as exc:
                 self.logger.error(f"Ошибка обработчика команд VK: {exc}")

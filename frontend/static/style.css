@@ -26,9 +26,9 @@
     --bg-accent: #4389fa;
 
     --font-ui: "Onest", system-ui, "Segoe UI", sans-serif;
-    --text: #ffffff;
-    --text-soft: rgba(255, 255, 255, 0.78);
-    --text-faint: rgba(255, 255, 255, 0.5);
+    --text: #eceff7;
+    --text-soft: rgba(236, 239, 247, 0.72);
+    --text-faint: rgba(236, 239, 247, 0.5);
     --warm: #ffc670;
     --ok: #5fe0a0;
     --warn: #ffc670;
@@ -52,13 +52,13 @@ body {
 
 /* Общий «стеклянный» блок. Используется и страницей настроек. */
 .glass-effect {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     box-shadow:
-        0 8px 24px rgba(0, 0, 0, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 8px 24px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
         inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 
@@ -70,27 +70,27 @@ html.board-root {
     font-size: max(10px, min(1.0417vw, 1.852vh));
 
     /* Токены оформления табло. */
-    --panel-bg: rgba(255, 255, 255, 0.08);
-    --panel-border: rgba(255, 255, 255, 0.14);
+    --panel-bg: rgba(255, 255, 255, 0.06);
+    --panel-border: rgba(255, 255, 255, 0.11);
     --panel-blur: blur(14px);
     --panel-shadow:
-        0 8px 24px rgba(0, 0, 0, 0.08),
-        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 8px 24px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
         inset 0 -1px 0 rgba(0, 0, 0, 0.08);
     --panel-radius: 1.1rem;
     --cell-bg: transparent;
     --cell-gap: 0px;
-    --cell-divider: rgba(255, 255, 255, 0.13);
-    --slot-divider: rgba(255, 255, 255, 0.09);
-    --today-bg: rgba(255, 255, 255, 0.2);
-    --today-ring: rgba(255, 255, 255, 0.55);
-    --today-shadow: 0 0.5rem 1.6rem rgba(255, 255, 255, 0.14);
-    --sat-bg: rgba(255, 190, 100, 0.1);
-    --sat-head: #ffd08a;
-    --hero-shift-bg: rgba(255, 255, 255, 0.07);
-    --hero-current-bg: rgba(255, 255, 255, 0.18);
-    --hero-current-ring: rgba(255, 255, 255, 0.5);
-    --clock-sec: rgba(255, 255, 255, 0.5);
+    --cell-divider: rgba(255, 255, 255, 0.1);
+    --slot-divider: rgba(255, 255, 255, 0.07);
+    --today-bg: rgba(255, 255, 255, 0.14);
+    --today-ring: rgba(255, 255, 255, 0.38);
+    --today-shadow: 0 0.5rem 1.6rem rgba(255, 255, 255, 0.08);
+    --sat-bg: rgba(255, 190, 100, 0.08);
+    --sat-head: #efc584;
+    --hero-shift-bg: rgba(255, 255, 255, 0.05);
+    --hero-current-bg: rgba(255, 255, 255, 0.13);
+    --hero-current-ring: rgba(255, 255, 255, 0.35);
+    --clock-sec: rgba(236, 239, 247, 0.5);
 }
 
 body.board-page {
@@ -152,11 +152,11 @@ body.board-page.is-ready {
 }
 
 .icon-morning {
-    color: #ffd27a;
+    color: #efc878;
 }
 
 .icon-evening {
-    color: #b9c8ff;
+    color: #aebce9;
 }
 
 .icon-saturday {
@@ -281,8 +281,8 @@ body.board-page.is-ready {
 }
 
 .hero-shift.is-current .hero-shift-badge {
-    background: rgba(95, 224, 160, 0.24);
-    color: #c9ffe3;
+    background: rgba(95, 224, 160, 0.18);
+    color: #b5e9cd;
 }
 
 .hero-shift-names {
@@ -649,8 +649,8 @@ body.board-page.is-ready {
 }
 
 .slot.is-current {
-    background: rgba(255, 255, 255, 0.14);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.09);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
 .slot.is-done {
@@ -675,7 +675,7 @@ body.board-page.is-ready {
 .hero-shift-progress span {
     display: block;
     height: 100%;
-    background: linear-gradient(90deg, rgba(95, 224, 160, 0.55), rgba(95, 224, 160, 0.95));
+    background: linear-gradient(90deg, rgba(95, 224, 160, 0.4), rgba(95, 224, 160, 0.75));
     transform-origin: left center;
     transform: scaleX(0);
     transition: transform 1.2s ease;
@@ -718,7 +718,7 @@ body.board-page.is-ready {
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(236, 239, 247, 0.9);
     opacity: 0.12;
     cursor: pointer;
     z-index: 2;

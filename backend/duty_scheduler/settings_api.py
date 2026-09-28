@@ -23,6 +23,7 @@ from .managed_files import (
     write_vk_users,
 )
 from .runtime import apply_runtime_config, refresh_schedule_async
+from .schedule_service import ScheduleService
 from .settings_store import (
     SECRET_PLACEHOLDER,
     SETTING_FIELDS,
@@ -227,9 +228,34 @@ def credentials_path():
     return resolve_path(config.project_root, config.credentials_file)
 
 
+def schedule_person_keys() -> set[str] | None:
+    """«фамилия имя» всех, кто есть в таблице. None — таблица ещё не загружена."""
+    service = current_app.extensions["schedule_service"]
+    if not hasattr(service, "get_schedule_snapshot"):
+        return None
+    records = service.get_schedule_snapshot()
+    if not records:
+        return None
+    return {
+        ScheduleService.person_key(slot["name"])
+        for record in records
+        for slot in record.get("slots") or []
+    }
+
+
 def describe_vk_users() -> dict:
+    """Список участников; in_schedule — нашлось ли имя в таблице (None — неизвестно).
+
+    Имя, которого нет в таблице, — это человек без упоминаний в напоминаниях:
+    обычно его добавил бот из беседы с именем со страницы VK, и администратору
+    стоит привести имя к виду из таблицы.
+    """
     path = vk_users_path()
-    return {"success": True, "file": describe_path(path), "users": read_vk_users(path)}
+    users = read_vk_users(path)
+    known = schedule_person_keys()
+    for user in users:
+        user["in_schedule"] = None if known is None else ScheduleService.person_key(user["name"]) in known
+    return {"success": True, "file": describe_path(path), "users": users}
 
 
 @settings_api_bp.route("/api/settings/vk-users")

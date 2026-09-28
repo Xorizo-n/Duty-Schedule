@@ -16,6 +16,7 @@ from pathlib import Path
 import json
 import os
 import re
+import threading
 
 from .settings_store import SettingsError
 
@@ -62,32 +63,47 @@ def atomic_write_text(path: Path, text: str, mode: int | None = None) -> None:
 # vk_users.json
 # ----------------------------------------------------------------------
 
+# Файл пишут двое: страница настроек и бот, дописывающий участников беседы.
+VK_USERS_LOCK = threading.Lock()
+
+
 def _squash_spaces(value) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def read_vk_users(path: Path) -> list[dict]:
-    """Маппинг в виде списка строк формы: `[{name, id, label}]`.
-
-    Оба формата значения из файла («имя: id» и «имя: {id, label}») приводятся
-    к одному виду; при записи формат восстанавливается — см. `validate_vk_users`.
-    """
+def _read_vk_users_file(path: Path) -> dict:
     if not path.is_file():
-        return []
-
+        return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise SettingsError(f"Не удалось прочитать {path.name}: {exc}")
     if not isinstance(raw, dict):
         raise SettingsError(f"{path.name} должен содержать JSON-объект")
+    return raw
 
+
+def read_vk_users(path: Path) -> list[dict]:
+    """Маппинг в виде списка строк формы: `[{name, id, label, auto}]`.
+
+    Оба формата значения из файла («имя: id» и «имя: {id, label, auto}»)
+    приводятся к одному виду; при записи формат восстанавливается — см.
+    `validate_vk_users`. auto — человек добавлен ботом из беседы и его имя
+    ещё никто не проверял.
+    """
     users = []
-    for name, value in raw.items():
+    for name, value in _read_vk_users_file(path).items():
         if isinstance(value, dict):
-            users.append({"name": name, "id": value.get("id"), "label": value.get("label") or ""})
+            users.append(
+                {
+                    "name": name,
+                    "id": value.get("id"),
+                    "label": value.get("label") or "",
+                    "auto": bool(value.get("auto")),
+                }
+            )
         else:
-            users.append({"name": name, "id": value, "label": ""})
+            users.append({"name": name, "id": value, "label": "", "auto": False})
     return users
 
 
@@ -120,13 +136,58 @@ def validate_vk_users(raw_users) -> dict:
         vk_id = int(raw_id)
 
         label = _squash_spaces(item.get("label"))
-        mapping[name] = {"id": vk_id, "label": label} if label else vk_id
+        value: dict[str, object] = {"id": vk_id}
+        if label:
+            value["label"] = label
+        if item.get("auto") is True:
+            value["auto"] = True
+        mapping[name] = value if len(value) > 1 else vk_id
 
     return mapping
 
 
-def write_vk_users(path: Path, mapping: dict) -> None:
+def _write_vk_users_file(path: Path, mapping: dict) -> None:
     atomic_write_text(path, json.dumps(mapping, ensure_ascii=False, indent=2) + "\n")
+
+
+def write_vk_users(path: Path, mapping: dict) -> None:
+    with VK_USERS_LOCK:
+        _write_vk_users_file(path, mapping)
+
+
+def add_vk_chat_members(path: Path, members: list[dict]) -> list[str]:
+    """Дописывает в vk_users.json участников беседы, которых там ещё нет.
+
+    members — `[{"id": int, "name": "Фамилия Имя"}]` из VK. Кто уже есть по id
+    (под любым именем), не трогается: имя в файле мог поправить администратор.
+    Новые записи получают пометку auto. Занятое имя (тёзка) — «Имя (id…)»:
+    ключи в файле уникальны без учёта регистра. Возвращает добавленные имена.
+    """
+    with VK_USERS_LOCK:
+        mapping = _read_vk_users_file(path)
+        known_ids = set()
+        for value in mapping.values():
+            vk_id = value.get("id") if isinstance(value, dict) else value
+            if str(vk_id).strip().isdigit():
+                known_ids.add(int(vk_id))
+        taken = {name.casefold() for name in mapping}
+
+        added = []
+        for member in members:
+            vk_id = int(member["id"])
+            if vk_id <= 0 or vk_id in known_ids:
+                continue
+            name = _squash_spaces(member.get("name")) or f"id{vk_id}"
+            if name.casefold() in taken:
+                name = f"{name} (id{vk_id})"
+            mapping[name] = {"id": vk_id, "auto": True}
+            known_ids.add(vk_id)
+            taken.add(name.casefold())
+            added.append(name)
+
+        if added:
+            _write_vk_users_file(path, mapping)
+        return added
 
 
 # ----------------------------------------------------------------------

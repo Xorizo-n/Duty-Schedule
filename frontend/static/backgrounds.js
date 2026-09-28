@@ -28,17 +28,17 @@ function randomBetween(min, max) {
 }
 
 function setupBokeh(span) {
-    const duration = randomBetween(30, 55);
+    const duration = randomBetween(45, 80);
     span.style.setProperty("--x", `${randomBetween(-2, 98).toFixed(1)}%`);
     span.style.setProperty("--size", `${randomBetween(5, 16).toFixed(1)}vh`);
-    span.style.setProperty("--o", randomBetween(0.12, 0.26).toFixed(2));
+    span.style.setProperty("--o", randomBetween(0.08, 0.18).toFixed(2));
     span.style.setProperty("--dx", `${randomBetween(-8, 8).toFixed(1)}vw`);
     span.style.setProperty("--dur", `${duration.toFixed(1)}s`);
     span.style.setProperty("--delay", `${(-Math.random() * duration).toFixed(1)}s`);
 }
 
 const BACKGROUND_INTERVAL_MS = 120000;
-const BACKGROUND_FADE_MS = 6000;
+const BACKGROUND_FADE_MS = 9000;
 // Цвет подложки перетекает в цвет новой части суток за 10 минут.
 const SKY_FADE_MS = 10 * 60 * 1000;
 
