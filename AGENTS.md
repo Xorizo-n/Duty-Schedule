@@ -101,7 +101,7 @@ frontend/    templates/ + static/, сборки нет (vanilla JS; Bootstrap с
 умолчанию добавляет рабочий каталог в `sys.path`, поэтому `wsgi:app`
 резолвится. Не переносите точки входа из `backend/`, не поправив это.
 
-Версия приложения захардкожена: `AppConfig.app_version = "2.9.1"` в
+Версия приложения захардкожена: `AppConfig.app_version = "2.9.2"` в
 [config.py](backend/duty_scheduler/config.py). Она же прокидывается в `?v=` для
 cache-busting статики в [index.html](frontend/templates/index.html:10). При изменении
 фронтенда версию надо бампать, иначе на табло приедет старый CSS/JS — и
@@ -758,14 +758,14 @@ docker exec duty-schedule-app chown appuser:appuser /app/data/credentials.json
   `transform`, затемнение в `::after`.
 * **Две сцены** `.background-scene`. `BackgroundController` ставит пресет в
   скрытую сцену (класс `bg-<имя>`, при нужде — пустые `<span>`), проявляет её
-  и растворяет видимую. Кроссфейд — `opacity` за `BACKGROUND_FADE_MS` (6 с),
+  и растворяет видимую. Кроссфейд — `opacity` за `BACKGROUND_FADE_MS` (9 с),
   смена — раз в `BACKGROUND_INTERVAL_MS` (2 мин), следующий пресет случайный,
   но не тот же. Уходящая сцена после перехода **очищается**: скрытый слой
   ничего не рисует и не крутит анимаций (раньше предзагруженный слой всё
   время анимировался невидимым).
 * **Пресеты** — `BACKGROUND_PRESETS` в JS + класс в CSS. Все четыре — порты
   `animations_examples/` с сохранением геометрии, цвет — `--bg-line` (светлый
-  тон табло), темп замедлен в 2–5 раз:
+  тон табло), темп замедлен в 3–8 раз, узор приглушён под стекло:
 
   | Пресет | Пример | Как устроен |
   |---|---|---|

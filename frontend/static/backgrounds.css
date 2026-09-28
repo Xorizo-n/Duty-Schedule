@@ -27,10 +27,10 @@
     position: absolute;
     inset: -25%;
     background:
-        radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.1), transparent 22%),
-        radial-gradient(circle at 70% 26%, rgba(163, 213, 255, 0.11), transparent 20%),
+        radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.07), transparent 22%),
+        radial-gradient(circle at 70% 26%, rgba(163, 213, 255, 0.08), transparent 20%),
         radial-gradient(circle at 58% 76%, rgba(17, 37, 94, 0.28), transparent 28%);
-    animation: bgGlowDrift 60s ease-in-out infinite alternate;
+    animation: bgGlowDrift 90s ease-in-out infinite alternate;
     will-change: transform;
 }
 
@@ -79,23 +79,23 @@
     margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
     border-radius: 50%;
     background: rgb(255 255 255 / var(--o));
-    animation: bgOrbPulse 6s cubic-bezier(0.6, 0, 0.4, 1) infinite alternate;
+    animation: bgOrbPulse 10s cubic-bezier(0.6, 0, 0.4, 1) infinite alternate;
     animation-delay: var(--delay);
     will-change: transform;
 }
 
-.bg-orbs span:nth-child(1) { --d: 43vh;  --o: 0.13; --delay: 0s; }
-.bg-orbs span:nth-child(2) { --d: 86vh;  --o: 0.1;  --delay: 0.6s; }
-.bg-orbs span:nth-child(3) { --d: 129vh; --o: 0.07; --delay: 1.2s; }
-.bg-orbs span:nth-child(4) { --d: 171vh; --o: 0.045; --delay: 1.8s; }
-.bg-orbs span:nth-child(5) { --d: 214vh; --o: 0.025; --delay: 2.4s; }
+.bg-orbs span:nth-child(1) { --d: 43vh;  --o: 0.09;  --delay: 0s; }
+.bg-orbs span:nth-child(2) { --d: 86vh;  --o: 0.07;  --delay: 1s; }
+.bg-orbs span:nth-child(3) { --d: 129vh; --o: 0.05;  --delay: 2s; }
+.bg-orbs span:nth-child(4) { --d: 171vh; --o: 0.032; --delay: 3s; }
+.bg-orbs span:nth-child(5) { --d: 214vh; --o: 0.018; --delay: 4s; }
 
 @keyframes bgOrbPulse {
     from {
         transform: scale(1);
     }
     to {
-        transform: scale(1.1);
+        transform: scale(1.06);
     }
 }
 
@@ -108,7 +108,7 @@
 .bg-angled {
     --s: 96px;
     --g: 16px;
-    --period: 10s;
+    --period: 18s;
 }
 
 .bg-angled::before,
@@ -123,7 +123,7 @@
     bottom: 0;
     left: calc(-1 * var(--s));
     right: calc(-1 * var(--s));
-    opacity: 0.2;
+    opacity: 0.13;
     background:
         repeating-linear-gradient(var(--c) 0 var(--g), #0000 0 50%) 0 calc(0.866 * var(--s) - var(--g) / 2),
         conic-gradient(from -150deg at var(--g) 50%, var(--c) 120deg, #0000 0),
@@ -201,7 +201,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    opacity: 0.15;
+    opacity: 0.1;
     background:
         conic-gradient(from calc(-45deg - var(--oct-a) / 2) at top var(--oct-p) left var(--oct-p), var(--_g)),
         conic-gradient(from calc(-45deg - var(--oct-a) / 2) at top var(--oct-p) left var(--oct-p), var(--_g)),
@@ -213,7 +213,7 @@
         conic-gradient(from calc(135deg - var(--oct-a) / 2) at bottom var(--oct-p) right var(--oct-p), var(--_g))
         var(--oct-c2);
     background-size: calc(2 * var(--s)) calc(2 * var(--s));
-    animation: bgOctagonMorph 7s infinite alternate linear;
+    animation: bgOctagonMorph 12s infinite alternate linear;
 }
 
 @keyframes bgOctagonMorph {
@@ -256,14 +256,14 @@
 .bg-mosaic {
     font-size: 32px;
     background-image:
-        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.12) 270deg),
-        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.16) 270deg),
-        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.2) 270deg),
-        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.25) 270deg);
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.08) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.11) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.14) 270deg),
+        conic-gradient(at 1em 1em, #0000 270deg, rgb(var(--bg-line) / 0.17) 270deg);
     background-size: 4em 4em;
     -webkit-mask: radial-gradient(circle, #000 0.57em, #0000 0.6em) 0 0 / 1em 1em;
     mask: radial-gradient(circle, #000 0.57em, #0000 0.6em) 0 0 / 1em 1em;
-    animation: bgMosaicX 18s infinite, bgMosaicY 18s -5.625s infinite;
+    animation: bgMosaicX 28s infinite, bgMosaicY 28s -8.75s infinite;
 }
 
 @keyframes bgMosaicX {
@@ -303,17 +303,17 @@
     top: var(--y);
     margin: -37.5vmax 0 0 -37.5vmax;
     border-radius: 50%;
-    background: radial-gradient(circle, rgb(var(--c) / 0.26) 0%, rgb(var(--c) / 0.1) 38%, transparent 66%);
+    background: radial-gradient(circle, rgb(var(--c) / 0.18) 0%, rgb(var(--c) / 0.07) 38%, transparent 66%);
     mix-blend-mode: screen;
     animation: bgAuroraDrift var(--dur) ease-in-out infinite alternate;
     animation-delay: var(--delay);
     will-change: transform;
 }
 
-.bg-aurora span:nth-child(1) { --c: 80 200 255;  --x: 20%; --y: 30%; --dur: 46s; --delay: 0s; }
-.bg-aurora span:nth-child(2) { --c: 150 110 255; --x: 78%; --y: 25%; --dur: 58s; --delay: -12s; }
-.bg-aurora span:nth-child(3) { --c: 60 220 200;  --x: 60%; --y: 80%; --dur: 52s; --delay: -25s; }
-.bg-aurora span:nth-child(4) { --c: 90 130 255;  --x: 15%; --y: 85%; --dur: 64s; --delay: -40s; }
+.bg-aurora span:nth-child(1) { --c: 80 200 255;  --x: 20%; --y: 30%; --dur: 66s; --delay: 0s; }
+.bg-aurora span:nth-child(2) { --c: 150 110 255; --x: 78%; --y: 25%; --dur: 82s; --delay: -17s; }
+.bg-aurora span:nth-child(3) { --c: 60 220 200;  --x: 60%; --y: 80%; --dur: 74s; --delay: -35s; }
+.bg-aurora span:nth-child(4) { --c: 90 130 255;  --x: 15%; --y: 85%; --dur: 90s; --delay: -56s; }
 
 @keyframes bgAuroraDrift {
     0% {
@@ -347,9 +347,9 @@
     will-change: transform;
 }
 
-.bg-waves span:nth-child(1) { --w: 1600px; --h: 46vh; --o: 0.06;  --dur: 70s; }
-.bg-waves span:nth-child(2) { --w: 1100px; --h: 34vh; --o: 0.08;  --dur: 48s; --dir: reverse; }
-.bg-waves span:nth-child(3) { --w: 800px;  --h: 22vh; --o: 0.1;   --dur: 36s; }
+.bg-waves span:nth-child(1) { --w: 1600px; --h: 46vh; --o: 0.045; --dur: 110s; }
+.bg-waves span:nth-child(2) { --w: 1100px; --h: 34vh; --o: 0.06;  --dur: 76s; --dir: reverse; }
+.bg-waves span:nth-child(3) { --w: 800px;  --h: 22vh; --o: 0.075; --dur: 56s; }
 
 @keyframes bgWaveLeft {
     to {
@@ -380,21 +380,21 @@
     background: repeating-linear-gradient(
         45deg,
         rgb(var(--bg-line) / 0) 0,
-        rgb(var(--bg-line) / 0.09) calc(var(--p) * 0.25),
+        rgb(var(--bg-line) / 0.065) calc(var(--p) * 0.25),
         rgb(var(--bg-line) / 0) calc(var(--p) * 0.5),
         rgb(var(--bg-line) / 0) var(--p)
     );
-    animation: bgStripesLeft 26s linear infinite;
+    animation: bgStripesLeft 42s linear infinite;
 }
 
 .bg-stripes::after {
     --p: 46px;
     background: repeating-linear-gradient(
         45deg,
-        rgb(var(--bg-line) / 0.06) 0 2px,
+        rgb(var(--bg-line) / 0.045) 0 2px,
         rgb(var(--bg-line) / 0) 2px var(--p)
     );
-    animation: bgStripesRight 40s linear infinite;
+    animation: bgStripesRight 64s linear infinite;
 }
 
 @keyframes bgStripesLeft {
