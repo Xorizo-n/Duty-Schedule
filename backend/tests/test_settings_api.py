@@ -207,6 +207,33 @@ class SettingsApiTestCase(unittest.TestCase):
             {"Иван Иванов": 101, "Пётр Петров": {"id": 202, "label": "Пётр"}},
         )
 
+    def test_vk_users_are_marked_when_their_name_is_not_in_the_schedule(self) -> None:
+        self.set_password()
+        (self.project_root / "vk_users.json").write_text(
+            json.dumps({"Иванов Иван": 101, "Ваня Петров": {"id": 202, "auto": True}}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        schedule_service = FakeService()
+        schedule_service.get_schedule_snapshot = lambda: [
+            {"slots": [{"shift": "morning", "name": "Иванов Иван Иванович", "row": 3, "col": 2}]}
+        ]
+        self.app.extensions["schedule_service"] = schedule_service
+
+        users = self.client.get("/api/settings/vk-users").get_json()["users"]
+
+        self.assertEqual(
+            [(user["name"], user["auto"], user["in_schedule"]) for user in users],
+            [("Иванов Иван", False, True), ("Ваня Петров", True, False)],
+        )
+
+    def test_vk_users_schedule_mark_is_unknown_until_the_table_loads(self) -> None:
+        self.set_password()
+        (self.project_root / "vk_users.json").write_text(json.dumps({"Иванов Иван": 101}), encoding="utf-8")
+
+        users = self.client.get("/api/settings/vk-users").get_json()["users"]
+
+        self.assertIsNone(users[0]["in_schedule"])
+
     def test_vk_users_validation_error_keeps_the_file_untouched(self) -> None:
         self.set_password()
         path = self.project_root / "vk_users.json"

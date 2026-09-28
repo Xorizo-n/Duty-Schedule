@@ -409,6 +409,118 @@ class VkCommandsTestCase(unittest.TestCase):
 
 
 
+class VkChatMembersTestCase(unittest.TestCase):
+    CHAT_PEER = "2000000001"
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.project_root = Path(self.temp_dir.name)
+        self.config = replace(make_config(project_root=self.project_root), vk_peer_id=self.CHAT_PEER)
+        self.schedule_service = ScheduleService(self.config, logging.getLogger("vk-members-schedule-test"))
+        self.notifier = VkNotifier(self.config, logging.getLogger("vk-members-test"), self.schedule_service)
+        self.mapping_path = self.project_root / self.config.vk_users_file
+        self.mapping_path.write_text(json.dumps({"Иванов Иван": 101}, ensure_ascii=False), encoding="utf-8")
+
+    def members_response(self) -> dict:
+        # Форма ответа messages.getConversationMembers.
+        return {
+            "count": 5,
+            "items": [
+                {"member_id": 101},
+                {"member_id": 202},
+                {"member_id": 303},
+                {"member_id": -777},
+                {"member_id": 404},
+            ],
+            "profiles": [
+                {"id": 101, "first_name": "Ваня", "last_name": "Иванов"},
+                {"id": 202, "first_name": "Пётр", "last_name": "Петров"},
+                {"id": 303, "first_name": "DELETED", "last_name": "", "deactivated": "deleted"},
+                {"id": 404, "first_name": "Олег", "last_name": "Сидоров"},
+            ],
+            "groups": [{"id": 777, "name": "Бот дежурств"}],
+        }
+
+    def mapping(self) -> dict:
+        return json.loads(self.mapping_path.read_text(encoding="utf-8"))
+
+    def test_fetch_skips_communities_and_deleted_pages(self) -> None:
+        with patch.object(self.notifier, "call_api", return_value=self.members_response()) as call_api:
+            members = self.notifier.fetch_chat_members()
+
+        call_api.assert_called_once_with("messages.getConversationMembers", peer_id=self.CHAT_PEER)
+        self.assertEqual(
+            members,
+            [
+                {"id": 101, "name": "Иванов Ваня"},
+                {"id": 202, "name": "Петров Пётр"},
+                {"id": 404, "name": "Сидоров Олег"},
+            ],
+        )
+
+    def test_sync_adds_only_unknown_people_and_keeps_admin_names(self) -> None:
+        with patch.object(self.notifier, "call_api", return_value=self.members_response()):
+            added = self.notifier.sync_chat_members()
+
+        self.assertEqual(added, ["Петров Пётр", "Сидоров Олег"])
+        self.assertEqual(
+            self.mapping(),
+            {
+                "Иванов Иван": 101,
+                "Петров Пётр": {"id": 202, "auto": True},
+                "Сидоров Олег": {"id": 404, "auto": True},
+            },
+        )
+
+    def test_added_people_get_private_access_and_mentions(self) -> None:
+        with patch.object(self.notifier, "call_api", return_value=self.members_response()):
+            self.notifier.sync_chat_members()
+
+        self.assertIn(404, self.notifier.allowed_user_ids())
+        self.assertEqual(self.notifier.get_vk_mention("Сидоров Олег Петрович"), "[id404|Сидоров Олег]")
+
+    def test_sync_changes_nothing_when_vk_refuses(self) -> None:
+        # Бот не администратор беседы — VK отвечает ошибкой, call_api отдаёт None.
+        with patch.object(self.notifier, "call_api", return_value=None):
+            self.assertEqual(self.notifier.sync_chat_members(), [])
+
+        self.assertEqual(self.mapping(), {"Иванов Иван": 101})
+
+    def test_sync_skips_a_private_dialog_in_peer_setting(self) -> None:
+        self.notifier.config = replace(self.config, vk_peer_id="123")
+
+        with patch.object(self.notifier, "call_api") as call_api:
+            self.assertEqual(self.notifier.sync_chat_members(), [])
+
+        self.assertFalse(call_api.called)
+
+    def test_join_message_in_the_chat_triggers_sync(self) -> None:
+        message = {"peer_id": int(self.CHAT_PEER), "from_id": 101, "text": "", "action": {"type": "chat_invite_user", "member_id": 404}}
+
+        with patch.object(self.notifier, "sync_chat_members") as sync:
+            self.assertTrue(self.notifier.handle_chat_action(message))
+
+        sync.assert_called_once()
+
+    def test_join_in_another_chat_and_ordinary_messages_are_not_actions(self) -> None:
+        foreign = {"peer_id": 2000000009, "action": {"type": "chat_invite_user_by_link"}}
+        ordinary = {"peer_id": int(self.CHAT_PEER), "text": "сегодня"}
+
+        with patch.object(self.notifier, "sync_chat_members") as sync:
+            self.assertFalse(self.notifier.handle_chat_action(foreign))
+            self.assertFalse(self.notifier.handle_chat_action(ordinary))
+
+        self.assertFalse(sync.called)
+
+    def test_settings_change_schedules_a_new_sync(self) -> None:
+        self.notifier.last_members_sync = 12345.0
+
+        self.notifier.apply_config(self.config)
+
+        self.assertEqual(self.notifier.last_members_sync, 0.0)
+
+
 class VkSwapDialogTestCase(unittest.TestCase):
     """Диалог подмены в личке. Фикстура листа, «сейчас» — СР 02.09, 12:00."""
 
