@@ -52,9 +52,9 @@ body {
 
 /* Общий «стеклянный» блок. Используется и страницей настроек. */
 .glass-effect {
-    background: rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: rgba(14, 24, 66, 0.62);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.11);
     box-shadow:
         0 8px 24px rgba(0, 0, 0, 0.1),
@@ -70,9 +70,11 @@ html.board-root {
     font-size: max(10px, min(1.0417vw, 1.852vh));
 
     /* Токены оформления табло. */
-    --panel-bg: rgba(255, 255, 255, 0.06);
+    /* Панели — плотное тонированное стекло: тёмно-синее, фон лишь слегка
+       проступает сквозь размытие. Текст на нём контрастнее, чем на светлом. */
+    --panel-bg: rgba(14, 24, 66, 0.62);
     --panel-border: rgba(255, 255, 255, 0.11);
-    --panel-blur: blur(14px);
+    --panel-blur: blur(8px);
     --panel-shadow:
         0 8px 24px rgba(0, 0, 0, 0.1),
         inset 0 1px 0 rgba(255, 255, 255, 0.1),
@@ -772,7 +774,7 @@ body.board-page.is-ready {
 /* --- Облегчённый режим (is-lite от PerformanceGuard) ---
    Главная нагрузка на слабом железе — размытие стекла поверх анимированного
    фона: его приходится пересчитывать каждый кадр. В облегчённом режиме
-   размытия нет, панели плотнее, чтобы текст читался так же. */
+   размытия нет; цвет панели тот же, так что табло выглядит почти так же. */
 
 html.is-lite .panel,
 html.is-lite .glass-effect {
