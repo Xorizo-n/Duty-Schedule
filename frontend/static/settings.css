@@ -275,6 +275,14 @@ body.settings-page {
     font-size: 0.95em;
 }
 
+/* Под строкой, во всю ширину: «добавлен из беседы», «нет в графике». */
+.settings-users-notes {
+    grid-column: 1 / -1;
+    margin: -2px 0 4px;
+    font-size: 0.8em;
+    color: rgba(255, 200, 150, 0.95);
+}
+
 .settings-users-remove {
     padding: 6px 12px;
     line-height: 1;

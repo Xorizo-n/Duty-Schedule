@@ -345,6 +345,8 @@ class SettingsPage {
     renderVkUserRow(user) {
         const row = document.createElement("div");
         row.className = "settings-users-row";
+        // Пометка «добавлен из беседы» живёт в строке и уходит обратно при сохранении.
+        row.dataset.auto = user.auto ? "1" : "";
 
         const fields = [
             ["name", "Фамилия Имя", user.name],
@@ -361,6 +363,13 @@ class SettingsPage {
             if (key === "id") {
                 input.inputMode = "numeric";
             }
+            if (key === "name") {
+                // Администратор поправил имя — считаем его проверенным.
+                input.addEventListener("input", () => {
+                    row.dataset.auto = "";
+                    this.renderVkUserNotes(row, { auto: false, in_schedule: user.in_schedule });
+                });
+            }
             row.appendChild(input);
         });
 
@@ -376,8 +385,33 @@ class SettingsPage {
             }
         });
         row.appendChild(remove);
+        this.renderVkUserNotes(row, user);
 
         return row;
+    }
+
+    renderVkUserNotes(row, user) {
+        let notes = row.querySelector(".settings-users-notes");
+        const parts = [];
+        if (user.auto) {
+            parts.push("добавлен из беседы — проверьте имя");
+        }
+        if (user.in_schedule === false) {
+            parts.push("нет в графике: упоминаний не будет, пока имя не совпадёт с таблицей");
+        }
+
+        if (parts.length === 0) {
+            if (notes) {
+                notes.remove();
+            }
+            return;
+        }
+        if (!notes) {
+            notes = document.createElement("p");
+            notes.className = "settings-users-notes";
+            row.appendChild(notes);
+        }
+        notes.textContent = parts.join(" · ");
     }
 
     collectVkUsers() {
@@ -386,13 +420,14 @@ class SettingsPage {
             row.querySelectorAll("[data-user-field]").forEach((input) => {
                 user[input.dataset.userField] = input.value;
             });
+            user.auto = row.dataset.auto === "1";
             return user;
         });
     }
 
     onVkUserAdd() {
         const users = this.collectVkUsers();
-        users.push({ name: "", id: "", label: "" });
+        users.push({ name: "", id: "", label: "", auto: false });
         this.renderVkUsers(users);
 
         const rows = this.vkUsersList.querySelectorAll(".settings-users-row:not(.is-header)");
