@@ -39,7 +39,10 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(135deg, rgba(7, 16, 44, 0.08), rgba(255, 255, 255, 0.03) 45%, rgba(7, 16, 44, 0.18));
+    /* Затемнение поверх неба и сцен — заодно общий регулятор яркости фона. */
+    background:
+        linear-gradient(rgba(5, 10, 32, 0.14), rgba(5, 10, 32, 0.14)),
+        linear-gradient(135deg, rgba(7, 16, 44, 0.08), rgba(255, 255, 255, 0.02) 45%, rgba(7, 16, 44, 0.2));
 }
 
 @keyframes bgGlowDrift {
