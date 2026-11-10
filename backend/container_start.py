@@ -32,6 +32,8 @@ def drop_privileges() -> None:
     user_info = pwd.getpwnam(APP_USER)
     os.setgid(user_info.pw_gid)
     os.setuid(user_info.pw_uid)
+    # После сброса прав процессы должны использовать домашний каталог appuser.
+    os.environ["HOME"] = user_info.pw_dir
 
 
 def main() -> None:
