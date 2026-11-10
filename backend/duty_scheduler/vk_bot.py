@@ -14,7 +14,7 @@ from .config import AppConfig
 from .managed_files import add_vk_chat_members, resolve_path
 from .schedule_service import SATURDAY, SUNDAY, ScheduleService
 from .settings_store import SettingsError
-from .swaps import RESULT_WRITTEN, SwapError, SwapService
+from .swaps import RESULT_LOCAL, RESULT_WRITTEN, SwapError, SwapService
 
 
 MORNING_NOTIFICATION_HOUR = 10
@@ -66,7 +66,7 @@ SWAP_CONFIRM_ALIASES = frozenset({"подтвердить", "подтвержд�
 # Сколько ждать следующего шага диалога подмены, прежде чем его забыть.
 SWAP_SESSION_SECONDS = 600
 VK_BUTTON_LABEL_LIMIT = 40
-SWAP_SHIFT_TITLES = {"morning": "утро", "evening": "вечер", "saturday": ""}
+SWAP_SHIFT_TITLES = {"morning": "утро", "day": "день", "evening": "вечер", "saturday": ""}
 # "[club1|@club1] сегодня" или "@duty_bot сегодня" -> "сегодня": упоминание не часть команды.
 VK_MENTION_PATTERN = re.compile(r"\[[^\]]*\|[^\]]*\]|@[\w.]+")
 # Разметка упоминания сообщества: "[club123|..." — id группы во второй группе.
@@ -382,6 +382,15 @@ class VkNotifier:
             return f"{header}: воскресенье, дежурных нет."
 
         duty_entry = self.schedule_service.get_schedule_entry_by_date(duty_date) or {}
+        if "groups" in duty_entry:
+            lines = [f"{header}:"]
+            for group, values in duty_entry["groups"].items():
+                fields = (("evening", "Смена"),) if duty_date.weekday() == SATURDAY else (
+                    ("morning", "Утро"), ("day", "День"), ("evening", "Вечер"))
+                parts = [f"{label}: {self.format_duty_names(values.get(field, ''))}"
+                         for field, label in fields if values.get(field)]
+                lines.append(f"{group} — {'; '.join(parts) if parts else 'не назначены'}")
+            return "\n".join(lines)
         if duty_date.weekday() == SATURDAY:
             # По субботам смена одна, обе фамилии лежат в evening — см. парсер.
             names = self.format_duty_names(duty_entry.get("evening", ""))
@@ -411,6 +420,9 @@ class VkNotifier:
         for duty in week:
             duty_date = duty["date"]
             label = f"{duty['weekday']} {duty_date.strftime('%d.%m')}"
+            if "groups" in duty:
+                lines.append(self._format_day_answer("", duty_date, header=label))
+                continue
             if duty_date.weekday() == SATURDAY:
                 names = self.format_duty_names(duty.get("evening", ""))
                 lines.append(f"{label} — {names or 'не назначены'}")
@@ -591,7 +603,8 @@ class VkNotifier:
                 f"{label} ({SWAP_SHIFT_TITLES[slot['shift']]})" if SWAP_SHIFT_TITLES.get(slot["shift"]) else label
                 for label, slot in zip(labels, slots)
             ]
-        return labels
+        return [f"{label} ({slot['group']})" if slot.get("group") else label
+                for label, slot in zip(labels, slots)]
 
     def _swap_dates_keyboard(self, dates: list[date]) -> str:
         buttons = [
@@ -679,9 +692,12 @@ class VkNotifier:
         duty_date = date.fromisoformat(session["date"])
         text = (
             f"Подмена: {self._shift_label(duty_date, slot['shift'])}.\n"
+            f"{slot['group'] + chr(10) if slot.get('group') else ''}"
             f"Вместо: {self.schedule_service.shorten_name(slot['name'])}\n"
             f"Дежурит: {self.schedule_service.shorten_name(session['caller'])} (вы)\n"
-            "Подтвердить? Изменение сразу запишется в таблицу, в беседе увидят сообщение."
+            + ("Подтвердить? Подмена сохранится в приложении на выбранную дату."
+               if slot.get("recurring") else
+               "Подтвердить? Изменение сразу запишется в таблицу, в беседе увидят сообщение.")
         )
         keyboard = self._keyboard(
             [[
@@ -700,7 +716,7 @@ class VkNotifier:
         main_keyboard = self.build_keyboard(inline=False)
 
         try:
-            swap, result = self.swap_service.create_swap(duty_date, slot["shift"], slot["name"], caller, vk_id)
+            swap, result = self.swap_service.create_swap(duty_date, slot["shift"], slot["name"], caller, vk_id, slot.get("group"))
         except SwapError as exc:
             return str(exc), main_keyboard
 
@@ -708,11 +724,15 @@ class VkNotifier:
             f"Подмена от {vk_id}: {duty_date} ({slot['shift']}) '{slot['name']}' -> '{caller}', {result}"
         )
         where = self._shift_label(duty_date, slot["shift"])
+        if slot.get("group"):
+            where += f", {slot['group']}"
         old_short = self.schedule_service.shorten_name(slot["name"])
         if result == RESULT_WRITTEN:
             answer = f"Готово: {where} дежурите вы вместо {old_short}. В таблицу записано."
             # Перечитываем таблицу: так сервер сразу убедится, что запись дошла.
             threading.Thread(target=self.schedule_service.update_google_sheets, daemon=True).start()
+        elif result == RESULT_LOCAL:
+            answer = f"Готово: {where} дежурите вы вместо {old_short}. Подмена сохранена только в приложении на эту дату."
         else:
             answer = (
                 f"Подмена сохранена: {where} дежурите вы вместо {old_short}. "
@@ -996,6 +1016,22 @@ class VkNotifier:
             return
 
         duty_entry = self.schedule_service.get_schedule_entry_by_date(duty_date)
+        if duty_entry and "groups" in duty_entry:
+            group_lines = []
+            for group, values in duty_entry["groups"].items():
+                fields = (("day", "День"), ("evening", "Вечер")) if notification_type == "evening_today" else ((field_name, "Смена"),)
+                parts = [f"{label}: {self.format_vk_mentions(values.get(field, ''))}"
+                         for field, label in fields if values.get(field)]
+                if parts:
+                    group_lines.append(f"{group} — {'; '.join(parts)}")
+            if not group_lines:
+                return
+            day = duty_date.strftime("%d.%m")
+            title = (f"Сегодня ({day}) дежурят:" if notification_type in ("evening_today", "saturday_today")
+                     else f"Завтра ({day}) дежурят:")
+            if self.send_vk_message("\n".join([title, *group_lines]), keyboard=self.build_keyboard()):
+                self._mark_sent(notification_key, sent_at)
+            return
         duty_name = (duty_entry or {}).get(field_name, "").strip()
         if not duty_name:
             self.logger.info(f"На {duty_date} нет дежурства для уведомления ({notification_type})")

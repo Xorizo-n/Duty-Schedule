@@ -97,6 +97,21 @@ class VkNotifierTestCase(unittest.TestCase):
         self.assertIn("[id118945590|Козлов Данила]", sent_message)
         self.assertIn("дежурят", sent_message)
 
+    def test_weekday_notification_combines_day_and_evening_by_group(self) -> None:
+        now = datetime(2026, 9, 2, 10, 0, tzinfo=self.schedule_service.server_tz)
+        entry = {"groups": {"РТФ": {"day": "", "evening": "Иванов Иван"},
+                            "ИНЭУ": {"day": "Петров Пётр", "evening": "Сидоров Семён"}}}
+        self.write_mapping({"Иванов Иван": 1, "Петров Пётр": 2, "Сидоров Семён": 3})
+        with patch.object(self.schedule_service, "get_current_datetime", return_value=now), \
+             patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value=entry), \
+             patch.object(self.notifier, "send_vk_message", return_value=True) as send:
+            self.notifier.check_upcoming_duties()
+            self.notifier.check_upcoming_duties()
+        self.assertEqual(send.call_count, 1)
+        message = send.call_args.args[0]
+        self.assertIn("РТФ — Вечер: [id1|Иванов Иван]", message)
+        self.assertIn("ИНЭУ — День: [id2|Петров Пётр]; Вечер: [id3|Сидоров Семён]", message)
+
     def test_multiple_duty_names_stay_on_one_line(self) -> None:
         self.write_mapping({"Козлов Егор": 92581714, "Козлов Данила": 118945590})
 

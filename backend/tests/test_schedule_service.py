@@ -26,6 +26,29 @@ class ScheduleServiceTestCase(unittest.TestCase):
             parsed = self.service.parse_duty_sheet(worksheet)
         return {duty["date"]: duty for duty in parsed}
 
+    def test_weekly_sheet_repeats_weekdays_and_keeps_groups_and_saturday(self) -> None:
+        rows = [
+            ["", "ПОНЕДЕЛЬНИК", "", "ВТОРНИК", "", "СРЕДА", "", "ЧЕТВЕРГ", "", "ПЯТНИЦА", "", "", "", "СУББОТА"],
+            ["", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "", "", "РТФ", "ИНЭУ"],
+            ["Утро с 8:20 до 10:30", "Иванов Иван", "Петров Пётр", "", "", "", "", "", "", "", "", "", "05.09", "Один\nВторой", "Третий"],
+            ["День с 10:30 до 17:00", "-", "Сидоров Семён"],
+            ["Вечер с 17:00 до 19:30", "Другой Человек", ""],
+        ]
+        with patch.object(self.service, "get_current_datetime", return_value=self.reference):
+            parsed = self.service.parse_duty_sheet(FakeWorksheet(rows))
+        by_date = {item["date"]: item for item in parsed}
+        monday = by_date[date(2026, 8, 31)]
+        self.assertEqual(monday["groups"]["РТФ"]["morning"], "Иванов Иван")
+        self.assertEqual(monday["groups"]["ИНЭУ"]["day"], "Сидоров Семён")
+        self.assertEqual(monday["groups"]["РТФ"]["day"], "")
+        self.assertEqual(by_date[date(2026, 9, 7)]["groups"], monday["groups"])
+        self.assertEqual(by_date[date(2026, 9, 5)]["groups"]["РТФ"]["evening"], "Один, Второй")
+        self.service.data_cache["schedule"] = parsed
+        with patch.object(self.service, "get_current_datetime", return_value=self.reference):
+            api_day = self.service.build_api_payload()["weeks"][0][0]
+        self.assertEqual(api_day["groups"]["РТФ"]["morning"], "Иванов Иван")
+        self.assertNotIn("day", api_day["groups"]["ИНЭУ"])
+
     def test_parse_duty_sheet_reads_morning_and_evening_from_one_block(self) -> None:
         by_date = self.parse_fixture()
 

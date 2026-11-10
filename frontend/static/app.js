@@ -1,8 +1,8 @@
 // Время смен. В API его нет — оно одинаковое для всех дней и живёт в подписях
 // таблицы (колонки G и I), поэтому держим его здесь константой.
 const SHIFTS = {
-    morning: { label: "Утро", start: 8 * 60, end: 10 * 60, time: "8:00–10:00", short: "8–10" },
-    evening: { label: "Вечер", start: 17 * 60, end: 20 * 60, time: "17:00–20:00", short: "17–20" },
+    morning: { label: "Утро", start: 8 * 60 + 20, end: 10 * 60 + 30, time: "8:20–10:30", short: "8:20–10:30" },
+    evening: { label: "Вечер", start: 17 * 60, end: 19 * 60 + 30, time: "17:00–19:30", short: "17–19:30" },
     saturday: { label: "Суббота", start: 8 * 60, end: 16 * 60, time: "8:00–16:00", short: "8–16" },
 };
 
@@ -306,12 +306,30 @@ class DutyScheduleApp {
             return [];
         }
         if (day.weekday === "СБ" || day.weekday === "ВС") {
-            const names = this.splitPersons(day.evening);
+            const names = this.groupedNames(day, "evening");
             return names.length ? [{ kind: "saturday", names }] : [];
         }
         return ["morning", "evening"]
-            .map((kind) => ({ kind, names: this.splitPersons(day[kind]) }))
+            .map((kind) => ({ kind, names: this.groupedNames(day, kind) }))
             .filter((shift) => shift.names.length > 0);
+    }
+
+    groupedNames(day, kind) {
+        if (!day.groups) return this.splitPersons(day[kind]);
+        return Object.entries(day.groups).flatMap(([group, shifts]) =>
+            this.splitPersons(shifts[kind]).map((name) => `${group}: ${name}`));
+    }
+
+    createGroupedPersons(day, kind, showGroup = false) {
+        if (!day.groups) return this.createPersons(day[kind]);
+        return ["РТФ", "ИНЭУ"].map((group) => {
+            const row = this.createElement("div", "slot-group");
+            const names = this.splitPersons(day.groups[group]?.[kind]);
+            if (showGroup) row.append(this.createElement("span", "saturday-group-label", group));
+            row.append(...(names.length ? names.map((name) => this.createElement("div", "person", name)) :
+                [this.createElement("span", "slot-empty", "—")]));
+            return row;
+        });
     }
 
     splitPersons(value) {
@@ -416,7 +434,17 @@ class DutyScheduleApp {
         }
 
         const names = this.createElement("div", "hero-shift-names");
-        shift.names.forEach((name) => names.append(this.createElement("span", "hero-person", name)));
+        shift.names.forEach((name) => {
+            const person = this.createElement("span", "hero-person");
+            const match = name.match(/^(РТФ|ИНЭУ): (.+)$/);
+            if (match) {
+                person.append(this.createElement("span", "group-label", `${match[1]}:`));
+                person.append(document.createTextNode(` ${match[2]}`));
+            } else {
+                person.textContent = name;
+            }
+            names.append(person);
+        });
 
         card.append(top, names);
 
@@ -463,11 +491,8 @@ class DutyScheduleApp {
 
     createWeek(week, todayIso, weekIndex) {
         const element = this.createElement("div", "week panel");
-        const containsToday = week.some((day) => day.date === todayIso);
-
         const labels = this.createElement("div", "week-labels");
         const caption = this.createElement("div", "week-caption");
-        caption.append(this.createElement("span", "week-title", containsToday ? "Эта неделя" : "Неделя"));
         if (week.length) {
             caption.append(
                 this.createElement("span", "week-range", `${week[0].date_str}–${week[week.length - 1].date_str}`)
@@ -477,8 +502,9 @@ class DutyScheduleApp {
         ["morning", "evening"].forEach((kind) => {
             const label = this.createElement("div", `shift-label shift-${kind}`);
             label.append(this.createIcon(kind));
-            label.append(this.createElement("span", "shift-label-name", SHIFTS[kind].label));
-            label.append(this.createElement("span", "shift-label-time", SHIFTS[kind].short));
+            ["РТФ", "ИНЭУ"].forEach((group) => {
+                label.append(this.createElement("span", "shift-group-label", group));
+            });
             labels.append(label);
         });
         labels.style.setProperty("--i", weekIndex * 7);
@@ -539,7 +565,7 @@ class DutyScheduleApp {
 
     // Возвращает true, если содержимое ячейки поменялось.
     fillDay(entry, day) {
-        const signature = `${day.morning}|${day.evening}`;
+        const signature = JSON.stringify([day.morning, day.evening, day.groups]);
         if (signature === entry.signature) {
             return false;
         }
@@ -547,13 +573,10 @@ class DutyScheduleApp {
 
         if (entry.slots.saturday) {
             const slot = entry.slots.saturday;
-            const time = this.createElement("div", "slot-time");
-            time.append(this.createIcon("saturday"));
-            time.append(document.createTextNode(SHIFTS.saturday.time));
-            slot.replaceChildren(time, ...this.createPersons(day.evening));
+            slot.replaceChildren(...this.createGroupedPersons(day, "evening", true));
         } else {
-            entry.slots.morning.replaceChildren(...this.createPersons(day.morning));
-            entry.slots.evening.replaceChildren(...this.createPersons(day.evening));
+            entry.slots.morning.replaceChildren(...this.createGroupedPersons(day, "morning"));
+            entry.slots.evening.replaceChildren(...this.createGroupedPersons(day, "evening"));
         }
         return true;
     }

@@ -9,8 +9,8 @@ services:
     environment:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json
-      - DUTY_SHEET_GID=${DUTY_SHEET_GID:-1262048925}
-      - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Новое Дежуство}
+      - DUTY_SHEET_GID=${DUTY_SHEET_GID:-649853413}
+      - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Дежурства НВК}
       - SERVER_TIMEZONE=Asia/Yekaterinburg
       - VK_BOT_TOKEN=${VK_BOT_TOKEN}
       - VK_PEER_ID=${VK_PEER_ID}

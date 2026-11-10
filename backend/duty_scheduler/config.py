@@ -36,8 +36,8 @@ class AppConfig:
 # config.py -> duty_scheduler -> backend -> корень проекта
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-DEFAULT_DUTY_SHEET_GID = 1262048925
-DEFAULT_DUTY_SHEET_NAME = "Новое Дежуство"
+DEFAULT_DUTY_SHEET_GID = 649853413
+DEFAULT_DUTY_SHEET_NAME = "Дежурства НВК"
 TRUE_VALUES = {"1", "true", "yes", "on", "да"}
 
 
@@ -107,7 +107,7 @@ def load_config(overrides: dict | None = None) -> AppConfig:
         credentials_file=os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"),
         vk_users_file=os.getenv("VK_USERS_FILE", "vk_users.json"),
         log_dir=os.getenv("LOG_DIR", "/app/logs"),
-        app_version="2.10.2",
+        app_version="2.11.5",
         # Намеренно вне `values`: в настройках его нет, а в docker-compose он не
         # передаётся — на сервере объявления о подменах всегда включены.
         vk_swap_announce=_load_bool("VK_SWAP_ANNOUNCE", True),

@@ -78,8 +78,8 @@ if [ ! -f ".env" ]; then
     cat > .env <<EOF
 # Конфигурация Google Sheets
 GOOGLE_SHEET_URL=$google_url
-DUTY_SHEET_GID=1262048925
-DUTY_SHEET_NAME=Новое Дежуство
+DUTY_SHEET_GID=649853413
+DUTY_SHEET_NAME=Дежурства НВК
 
 # Приложение
 TZ=Asia/Yekaterinburg
@@ -104,8 +104,8 @@ else
     echo -e "${GREEN}✅ Файл .env уже существует, проверяю обязательные переменные${NC}"
 fi
 
-ensure_env_var "DUTY_SHEET_GID" "1262048925"
-ensure_env_var "DUTY_SHEET_NAME" "Новое Дежуство"
+ensure_env_var "DUTY_SHEET_GID" "649853413"
+ensure_env_var "DUTY_SHEET_NAME" "Дежурства НВК"
 ensure_env_var "TZ" "Asia/Yekaterinburg"
 ensure_env_var "SERVER_TIMEZONE" "Asia/Yekaterinburg"
 ensure_env_var "VK_API_VERSION" "5.199"
@@ -138,8 +138,8 @@ services:
     environment:
       - GOOGLE_SHEET_URL=${GOOGLE_SHEET_URL}
       - GOOGLE_CREDENTIALS_FILE=/app/data/credentials.json
-      - DUTY_SHEET_GID=${DUTY_SHEET_GID:-1262048925}
-      - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Новое Дежуство}
+      - DUTY_SHEET_GID=${DUTY_SHEET_GID:-649853413}
+      - DUTY_SHEET_NAME=${DUTY_SHEET_NAME:-Дежурства НВК}
       - SERVER_TIMEZONE=Asia/Yekaterinburg
       - VK_BOT_TOKEN=${VK_BOT_TOKEN}
       - VK_PEER_ID=${VK_PEER_ID}
@@ -338,4 +338,4 @@ fi
 echo ""
 echo -e "${RED}⚠️ Важно:${NC}"
 echo "   Не удаляйте: credentials.json, .env, vk_users.json"
-echo "   Лист с графиком: 'Новое Дежуство' (gid 1262048925), см. DUTY_SHEET_GID"
+echo "   Лист с графиком: 'Дежурства НВК' (gid 649853413), см. DUTY_SHEET_GID"

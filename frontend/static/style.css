@@ -289,8 +289,7 @@ body.board-page.is-ready {
 
 .hero-shift-names {
     display: flex;
-    flex-wrap: wrap;
-    column-gap: 0.7rem;
+    flex-direction: column;
     margin-top: 0.3rem;
     font-size: 2.4rem;
     font-weight: 700;
@@ -299,12 +298,6 @@ body.board-page.is-ready {
 
 .hero-person {
     white-space: nowrap;
-}
-
-.hero-person + .hero-person::before {
-    content: "·";
-    margin-right: 0.7rem;
-    color: var(--text-faint);
 }
 
 .hero-message {
@@ -324,14 +317,13 @@ body.board-page.is-ready {
 .week {
     display: grid;
     grid-template-columns: 7.2rem repeat(6, minmax(0, 1fr));
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto repeat(4, minmax(0, 1fr));
     column-gap: var(--cell-gap);
     padding: 0.6rem;
     min-height: 0;
 }
 
-/* Колонка подписей и каждый день — подсетки на три строки недели:
-   заголовок, утро, вечер. Так строки выравниваются через всю неделю. */
+/* Заголовок и четыре строки смен выравниваются через всю неделю. */
 .week-labels,
 .day {
     grid-row: 1 / -1;
@@ -364,17 +356,31 @@ body.board-page.is-ready {
 }
 
 .shift-label {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: flex-start;
-    gap: 0.2rem;
+    display: grid;
+    grid-row: span 2;
+    grid-template-columns: auto auto;
+    grid-template-rows: subgrid;
+    justify-content: start;
+    align-items: center;
+    column-gap: 0.45rem;
     padding: 0 0.6rem;
     border-top: 1px solid var(--slot-divider);
     color: var(--text-soft);
 }
 
+.shift-group-label {
+    grid-column: 2;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.group-label,
+.shift-group-label {
+    color: var(--sat-head);
+}
+
 .shift-label .shift-icon {
+    grid-row: 1 / 3;
     width: 1.6rem;
     height: 1.6rem;
 }
@@ -421,19 +427,36 @@ body.board-page.is-ready {
 }
 
 .slot {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+    display: grid;
+    grid-row: span 2;
+    grid-template-rows: repeat(2, minmax(0, 1fr));
     min-height: 0;
-    padding: 0.4rem 0.5rem;
     border-top: 1px solid var(--slot-divider);
     text-align: center;
 }
 
 .slot-saturday {
-    grid-row: 2 / 4;
+    grid-row: 2 / 6;
+}
+
+.slot-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    min-height: 0;
+    padding: 0.2rem 0.5rem;
+}
+
+.slot-group + .slot-group {
+    border-top: 1px solid var(--slot-divider);
+}
+
+.saturday-group-label {
+    color: var(--sat-head);
+    font-size: 0.8rem;
+    font-weight: 700;
 }
 
 .slot-time {

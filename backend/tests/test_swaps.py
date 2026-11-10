@@ -11,6 +11,7 @@ from unittest.mock import patch
 from duty_scheduler.schedule_service import ScheduleService
 from duty_scheduler.swaps import (
     RESULT_PENDING,
+    RESULT_LOCAL,
     RESULT_WRITTEN,
     WRITTEN_GRACE_SECONDS,
     SwapError,
@@ -121,6 +122,40 @@ class SwapServiceTestCase(unittest.TestCase):
         self.assertEqual(self.cell(4, 5), CALLER)
         self.assertEqual(self.cached(date(2026, 9, 3))["evening"], CALLER)
         self.assertEqual(self.swaps.active_swaps()[0]["id"], swap["id"])
+
+    def test_recurring_swap_stays_local_and_applies_only_to_selected_date(self) -> None:
+        self.sheet = FakeWorksheet([
+            ["", "ПОНЕДЕЛЬНИК", "", "ВТОРНИК", "", "СРЕДА", "", "ЧЕТВЕРГ", "", "ПЯТНИЦА", "", "", "", "СУББОТА"],
+            ["", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "", "", "РТФ", "ИНЭУ"],
+            ["Утро", "", "", "", "", "", "", "Иванов Иван", "", "", ""],
+            ["День", "", "", "", "", "", "", "", "", "", ""],
+            ["Вечер", "", "", "", "", "", "", "", "", "", ""],
+        ])
+        self.service.data_cache["schedule"] = self.service.parse_duty_sheet(self.sheet)
+        swap, result = self.swaps.create_swap(date(2026, 9, 3), "morning", "Иванов Иван", CALLER, 123, "РТФ")
+        self.assertEqual(result, RESULT_LOCAL)
+        self.assertEqual(self.sheet.updates, [])
+        self.assertEqual(self.cached(date(2026, 9, 3))["groups"]["РТФ"]["morning"], CALLER)
+        self.assertEqual(self.cached(date(2026, 9, 10))["groups"]["РТФ"]["morning"], "Иванов Иван")
+        synced = {entry["date"]: entry for entry in self.sync()}
+        self.assertEqual(synced[date(2026, 9, 3)]["groups"]["РТФ"]["morning"], CALLER)
+        self.assertEqual(self.swaps.active_swaps()[0]["id"], swap["id"])
+        self.swaps.create_swap(date(2026, 9, 3), "morning", CALLER, "Новиков Пётр", 456, "РТФ")
+        self.assertEqual(self.cached(date(2026, 9, 3))["groups"]["РТФ"]["morning"], "Новиков Пётр")
+        self.assertEqual(self.sheet.updates, [])
+
+    def test_grouped_saturday_swap_writes_only_its_cell(self) -> None:
+        self.sheet = FakeWorksheet([
+            ["", "ПОНЕДЕЛЬНИК", "", "ВТОРНИК", "", "СРЕДА", "", "ЧЕТВЕРГ", "", "ПЯТНИЦА", "", "", "", "СУББОТА"],
+            ["", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "РТФ", "ИНЭУ", "", "", "РТФ", "ИНЭУ"],
+            ["Утро", "", "", "", "", "", "", "", "", "", "", "", "05.09", "Иванов Иван", "Петров Пётр"],
+            ["День"], ["Вечер"],
+        ])
+        self.service.data_cache["schedule"] = self.service.parse_duty_sheet(self.sheet)
+        _, result = self.swaps.create_swap(date(2026, 9, 5), "saturday", "Иванов Иван", CALLER, 123, "РТФ")
+        self.assertEqual(result, RESULT_WRITTEN)
+        self.assertEqual(self.sheet.updates, [(3, 14, CALLER)])
+        self.assertEqual(self.cached(date(2026, 9, 5))["groups"]["ИНЭУ"]["evening"], "Петров Пётр")
 
     def test_create_swap_on_saturday_replaces_only_chosen_person(self) -> None:
         self.swaps.create_swap(date(2026, 9, 5), "saturday", "Козлов Данила Дмитриевич", CALLER, 1)

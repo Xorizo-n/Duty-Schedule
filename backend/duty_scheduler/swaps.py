@@ -47,16 +47,18 @@ HISTORY_LIMIT = 200
 # Текстом можно ввести любую дату из таблицы.
 OFFERED_DAYS = 14
 
-SHIFT_ORDER = {"morning": 0, "evening": 1, "saturday": 2}
+SHIFT_ORDER = {"morning": 0, "day": 1, "evening": 2, "saturday": 3}
 # Когда смена заканчивается: сегодняшнюю закончившуюся подменять незачем.
 SHIFT_ENDS = {
-    "morning": day_time(10, 0),
-    "evening": day_time(20, 0),
+    "morning": day_time(10, 30),
+    "day": day_time(17, 0),
+    "evening": day_time(19, 30),
     "saturday": day_time(16, 0),
 }
 
 RESULT_WRITTEN = "written"
 RESULT_PENDING = "pending"
+RESULT_LOCAL = "local"
 
 
 class SwapError(Exception):
@@ -135,9 +137,10 @@ class SwapService:
         key = self.schedule_service.person_key
         return bool(left) and key(left) == key(right)
 
-    def find_slot(self, record: dict | None, shift: str, name: str) -> dict | None:
+    def find_slot(self, record: dict | None, shift: str, name: str, group: str | None = None) -> dict | None:
         for slot in (record or {}).get("slots") or []:
-            if slot.get("shift") == shift and self.same_person(slot.get("name", ""), name):
+            if (slot.get("shift") == shift and (group is None or slot.get("group") == group)
+                    and self.same_person(slot.get("name", ""), name)):
                 return slot
         return None
 
@@ -238,15 +241,22 @@ class SwapService:
             patched["slots"] = [dict(slot) for slot in record.get("slots") or []]
             touched = False
             for swap in record_swaps:
-                slot = self.find_slot(patched, swap["shift"], swap["old_name"])
+                slot = self.find_slot(patched, swap["shift"], swap["old_name"], swap.get("group"))
                 if slot is not None:
                     slot["name"] = swap["new_name"]
                     touched = True
 
             if touched:
                 # Строки для табло и бота собираем заново из ячеек-слотов.
-                for field in ("morning", "evening"):
-                    shifts = ("saturday", "evening") if field == "evening" else ("morning",)
+                if "groups" in patched:
+                    patched["groups"] = {group: dict(values) for group, values in record["groups"].items()}
+                    for group, values in patched["groups"].items():
+                        for field in values:
+                            shifts = ("saturday", "evening") if field == "evening" else (field,)
+                            values[field] = ", ".join(slot["name"] for slot in patched["slots"]
+                                if slot.get("group") == group and slot["shift"] in shifts)
+                for field in ("morning", "day", "evening"):
+                    shifts = ("saturday", "evening") if field == "evening" else (field,)
                     names = [slot["name"] for slot in patched["slots"] if slot["shift"] in shifts]
                     if names:
                         patched[field] = ", ".join(names)
@@ -293,6 +303,7 @@ class SwapService:
         old_name: str,
         new_name: str,
         vk_id: int,
+        group: str | None = None,
     ) -> tuple[dict, str]:
         """Сохраняет подмену и пробует записать её в таблицу.
 
@@ -306,7 +317,7 @@ class SwapService:
             same_shift = [
                 existing
                 for existing in data["active"]
-                if existing["date"] == duty_date.isoformat() and existing["shift"] == shift
+                if existing["date"] == duty_date.isoformat() and existing["shift"] == shift and existing.get("group") == group
             ]
             if any(self.same_person(existing["old_name"], old_name) for existing in same_shift):
                 raise SwapError("Этого человека в этот день уже подменили — посмотрите расписание заново.")
@@ -333,6 +344,7 @@ class SwapService:
                 "created_at": self._now().isoformat(),
                 "status": RESULT_PENDING,
                 "attempts": 0,
+                "group": group,
             }
 
             result = RESULT_PENDING
@@ -340,18 +352,22 @@ class SwapService:
                 worksheet = self.schedule_service.open_worksheet()
                 fresh = self.schedule_service.parse_duty_sheet(worksheet)
                 record = next((item for item in fresh if item["date"] == duty_date), None)
-                slot = self.find_slot(record, shift, old_name)
+                slot = self.find_slot(record, shift, old_name, group)
                 if slot is None:
                     raise SwapError(
                         "В таблице на этот день уже другие дежурные — посмотрите расписание заново."
                     )
-                if self._write_cell(worksheet, swap, slot) == "conflict":
+                if slot.get("recurring"):
+                    swap["status"] = RESULT_LOCAL
+                    result = RESULT_LOCAL
+                elif self._write_cell(worksheet, swap, slot) == "conflict":
                     raise SwapError(
                         "Ячейку в таблице только что изменили — посмотрите расписание заново."
                     )
-                swap["status"] = RESULT_WRITTEN
-                swap["written_at"] = time.time()
-                result = RESULT_WRITTEN
+                else:
+                    swap["status"] = RESULT_WRITTEN
+                    swap["written_at"] = time.time()
+                    result = RESULT_WRITTEN
             except SwapError:
                 raise
             except Exception as exc:
@@ -361,7 +377,13 @@ class SwapService:
             data["active"].append(swap)
             self._save(data)
 
-        self.apply_to_cache()
+        if result == RESULT_LOCAL:
+            # Свежий лист нужен и для цепочки подмен: кэш уже содержит
+            # предыдущего подменившего, а новая запись указывает исходного.
+            active = self.active_swaps()
+            self.schedule_service.replace_schedule(lambda schedule: self.overlay(fresh, active))
+        else:
+            self.apply_to_cache()
         return swap, result
 
     # ------------------------------------------------------------------
@@ -387,8 +409,8 @@ class SwapService:
                     continue
 
                 record = records.get(duty_date)
-                old_slot = self.find_slot(record, swap["shift"], swap["old_name"])
-                new_slot = self.find_slot(record, swap["shift"], swap["new_name"])
+                old_slot = self.find_slot(record, swap["shift"], swap["old_name"], swap.get("group"))
+                new_slot = self.find_slot(record, swap["shift"], swap["new_name"], swap.get("group"))
 
                 if new_slot is not None and old_slot is None:
                     self._close(data, swap, "confirmed")
@@ -402,6 +424,12 @@ class SwapService:
                     )
                     self._close(data, swap, "overridden")
                     changed = True
+                    continue
+
+                if swap.get("status") == RESULT_LOCAL or old_slot.get("recurring"):
+                    if swap.get("status") != RESULT_LOCAL:
+                        swap["status"] = RESULT_LOCAL
+                        changed = True
                     continue
 
                 if swap.get("status") == RESULT_WRITTEN:

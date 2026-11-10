@@ -306,6 +306,11 @@ class ScheduleService:
         all_values = worksheet.get_all_values()
         reference_date = self.get_current_datetime().date()
 
+        if len(all_values) >= 2 and any(
+            str(cell).strip().casefold() == "понедельник" for cell in all_values[0]
+        ):
+            return self._parse_weekly_duty_sheet(all_values, reference_date)
+
         date_row_indexes = [
             row_idx
             for row_idx, row in enumerate(all_values)
@@ -370,6 +375,79 @@ class ScheduleService:
         parsed = [schedule[date_key] for date_key in sorted(schedule)]
         self.logger.info(f"Разобран лист '{worksheet.title}': {len(parsed)} дат")
         return parsed
+
+    def _parse_weekly_duty_sheet(self, rows: list[list[str]], reference_date: date) -> list[dict]:
+        """Разбирает повторяющиеся будни и отдельно перечисленные субботы."""
+        weekdays = {"понедельник": 0, "вторник": 1, "среда": 2, "четверг": 3, "пятница": 4}
+        shifts = {"утро": "morning", "день": "day", "вечер": "evening"}
+        columns: dict[int, dict[str, int]] = {}
+        current_weekday = None
+        for col, heading in enumerate(rows[0]):
+            heading = str(heading).strip().casefold()
+            if heading in weekdays:
+                current_weekday = weekdays[heading]
+            elif heading == "суббота":
+                current_weekday = None
+            group = str(self._cell(rows[1], col)).strip().upper()
+            if current_weekday is not None and group in ("РТФ", "ИНЭУ"):
+                columns.setdefault(current_weekday, {})[group] = col
+
+        shift_rows = {}
+        for index, row in enumerate(rows[2:], start=2):
+            label = str(self._cell(row, 0)).strip().casefold()
+            for prefix, shift in shifts.items():
+                if label.startswith(prefix):
+                    shift_rows[shift] = index
+
+        if (set(columns) != set(range(5)) or any(set(groups) != {"РТФ", "ИНЭУ"} for groups in columns.values())
+                or set(shift_rows) != set(shifts.values())):
+            raise ValueError("Не удалось распознать будние дни и смены листа дежурств")
+
+        week_start = reference_date - timedelta(days=reference_date.weekday())
+        if reference_date.weekday() == SUNDAY:
+            week_start += timedelta(weeks=1)
+        schedule = {}
+        for week in range(2):
+            for weekday, groups in columns.items():
+                duty_date = week_start + timedelta(weeks=week, days=weekday)
+                record = {"date": duty_date, "date_str": duty_date.strftime("%d.%m"),
+                          "weekday": self.get_weekday_name(duty_date), "groups": {}, "slots": []}
+                for group, col in groups.items():
+                    record["groups"][group] = {}
+                    for shift, row_index in shift_rows.items():
+                        value = self.clean_name(self._cell(rows[row_index], col))
+                        record["groups"][group][shift] = "" if value in ("-", "—") else value
+                        for name in self.split_names(record["groups"][group][shift]):
+                            record["slots"].append({"shift": shift, "name": name, "row": row_index + 1,
+                                                    "col": col + 1, "group": group, "recurring": True})
+                for shift in shifts.values():
+                    record[shift] = ", ".join(group[shift] for group in record["groups"].values() if group[shift])
+                schedule[duty_date] = record
+
+        saturday_col = next((i for i, value in enumerate(rows[0]) if str(value).strip().casefold() == "суббота"), None)
+        if saturday_col is None or saturday_col == 0:
+            raise ValueError("Не удалось распознать субботние дежурства")
+        if saturday_col is not None and saturday_col > 0:
+            groups = {str(value).strip().upper(): i for i, value in enumerate(rows[1])
+                      if i >= saturday_col and str(value).strip().upper() in ("РТФ", "ИНЭУ")}
+            if set(groups) != {"РТФ", "ИНЭУ"}:
+                raise ValueError("Не удалось распознать подразделения субботних дежурств")
+            for row_index, row in enumerate(rows[2:], start=3):
+                raw_date = self._cell(row, saturday_col - 1)
+                duty_date = self.parse_date_cell(raw_date, reference_date) if self.is_date_cell(raw_date) else None
+                if not duty_date or duty_date.weekday() != SATURDAY:
+                    continue
+                values = {group: {"evening": self.clean_name(self._cell(row, col))} for group, col in groups.items()}
+                slots = [{"shift": "saturday", "name": name, "row": row_index, "col": groups[group],
+                          "group": group} for group, value in values.items()
+                         for name in self.split_names(value["evening"])]
+                for slot in slots:
+                    slot["col"] += 1
+                schedule[duty_date] = {"date": duty_date, "date_str": str(raw_date).strip(),
+                    "weekday": self.get_weekday_name(duty_date), "groups": values, "slots": slots,
+                    "morning": "", "day": "", "evening": ", ".join(
+                        value["evening"] for value in values.values() if value["evening"])}
+        return [schedule[key] for key in sorted(schedule)]
 
     def open_duty_worksheet(self, sheet):
         gid = self.config.duty_sheet_gid
@@ -533,15 +611,20 @@ class ScheduleService:
         for week in weeks:
             week_json = []
             for duty in week:
-                week_json.append(
-                    {
+                item = {
                         "date": duty["date"].strftime("%Y-%m-%d"),
                         "morning": self.shorten_name(duty.get("morning", "")),
                         "evening": self.shorten_name(duty.get("evening", "")),
                         "date_str": duty["date"].strftime("%d.%m"),
                         "weekday": duty["weekday"],
                     }
-                )
+                if "groups" in duty:
+                    item["groups"] = {
+                        group: {shift: self.shorten_name(values.get(shift, ""))
+                                for shift in ("morning", "evening")}
+                        for group, values in duty["groups"].items()
+                    }
+                week_json.append(item)
             weeks_json.append(week_json)
 
         current_dt = self.get_current_datetime()
