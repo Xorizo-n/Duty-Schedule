@@ -1019,7 +1019,9 @@ class VkNotifier:
         if duty_entry and "groups" in duty_entry:
             group_lines = []
             for group, values in duty_entry["groups"].items():
-                fields = (("day", "День"), ("evening", "Вечер")) if notification_type == "evening_today" else ((field_name, "Смена"),)
+                fields = (("day", "День"), ("evening", "Вечер")) if notification_type == "evening_today" else (
+                    (field_name, "Утро" if notification_type == "morning_tomorrow" else "Смена"),
+                )
                 parts = [f"{label}: {self.format_vk_mentions(values.get(field, ''))}"
                          for field, label in fields if values.get(field)]
                 if parts:

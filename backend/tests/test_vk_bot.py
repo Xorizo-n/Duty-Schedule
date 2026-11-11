@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs
 
 from duty_scheduler.config import load_config
 from duty_scheduler.schedule_service import ScheduleService
@@ -111,6 +112,28 @@ class VkNotifierTestCase(unittest.TestCase):
         message = send.call_args.args[0]
         self.assertIn("РТФ — Вечер: [id1|Иванов Иван]", message)
         self.assertIn("ИНЭУ — День: [id2|Петров Пётр]; Вечер: [id3|Сидоров Семён]", message)
+
+    def test_tomorrow_morning_notification_identifies_shift_and_uses_newlines(self) -> None:
+        now = datetime(2026, 11, 11, 19, 0, tzinfo=self.schedule_service.server_tz)
+        entry = {"groups": {"РТФ": {"morning": "Иванов Иван"},
+                            "ИНЭУ": {"morning": "Петров Пётр"}}}
+        self.write_mapping({"Иванов Иван": 1, "Петров Пётр": 2})
+        with patch.object(self.schedule_service, "get_current_datetime", return_value=now), \
+             patch.object(self.schedule_service, "get_schedule_entry_by_date", return_value=entry), \
+             patch.object(self.notifier, "send_vk_message", return_value=True) as send:
+            self.notifier.check_upcoming_duties()
+        self.assertEqual(send.call_args.args[0],
+                         "Завтра (12.11) дежурят:\nРТФ — Утро: [id1|Иванов Иван]\n"
+                         "ИНЭУ — Утро: [id2|Петров Пётр]")
+
+    def test_vk_request_transmits_newlines_without_backslashes(self) -> None:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"response": 1}'
+        with patch("duty_scheduler.vk_bot.urlopen", return_value=response) as urlopen:
+            self.assertTrue(self.notifier.send_vk_message("Первая строка\nВторая строка"))
+        request = urlopen.call_args.args[0]
+        params = parse_qs(request.data.decode("utf-8"))
+        self.assertEqual(params["message"], ["Первая строка\nВторая строка"])
 
     def test_multiple_duty_names_stay_on_one_line(self) -> None:
         self.write_mapping({"Козлов Егор": 92581714, "Козлов Данила": 118945590})
