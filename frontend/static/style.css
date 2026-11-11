@@ -291,13 +291,17 @@ body.board-page.is-ready {
     display: flex;
     flex-direction: column;
     margin-top: 0.3rem;
-    font-size: 2.4rem;
+    font-size: 2rem;
     font-weight: 700;
     line-height: 1.15;
 }
 
 .hero-person {
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+}
+
+.hero-shift.has-long-name .hero-shift-names {
+    font-size: 1.35rem;
 }
 
 .hero-message {
@@ -316,7 +320,7 @@ body.board-page.is-ready {
 
 .week {
     display: grid;
-    grid-template-columns: 7.2rem repeat(6, minmax(0, 1fr));
+    grid-template-columns: 8.2rem repeat(6, minmax(0, 1fr));
     grid-template-rows: auto repeat(4, minmax(0, 1fr));
     column-gap: var(--cell-gap);
     padding: 0.6rem;
@@ -370,6 +374,9 @@ body.board-page.is-ready {
 
 .shift-group-label {
     grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
     font-size: 0.9rem;
     font-weight: 600;
 }
@@ -386,7 +393,7 @@ body.board-page.is-ready {
 }
 
 .shift-label-name {
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text);
 }
@@ -440,6 +447,7 @@ body.board-page.is-ready {
 }
 
 .slot-group {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -449,8 +457,30 @@ body.board-page.is-ready {
     padding: 0.2rem 0.5rem;
 }
 
+.slot-group.paged-names {
+    padding-right: 1.5rem;
+}
+
+.names-page {
+    position: absolute;
+    right: 0.25rem;
+    bottom: 0.2rem;
+    font-size: 0.7rem;
+    color: var(--text-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+.hero-shift-names.paged-names {
+    padding-right: 1.6rem;
+}
+
+[hidden] {
+    display: none !important;
+}
+
 .slot-group + .slot-group {
     border-top: 1px solid var(--slot-divider);
+    background: rgba(255, 255, 255, 0.035);
 }
 
 .saturday-group-label {
@@ -473,26 +503,41 @@ body.board-page.is-ready {
     display: flex;
     flex-direction: column;
     max-width: 100%;
-    line-height: 1.1;
+    line-height: 1.05;
 }
 
 .person-surname,
 .person-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
 }
 
 .person-surname {
-    font-size: 1.75rem;
+    font-size: 1.3rem;
     font-weight: 700;
     letter-spacing: -0.01em;
 }
 
 .person-name {
-    font-size: 1.3rem;
+    font-size: 1rem;
     font-weight: 500;
     color: var(--text-soft);
+}
+
+.has-multiple .person {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    column-gap: 0.25em;
+}
+
+.has-multiple .person-surname,
+.has-multiple .person-name {
+    font-size: 0.9rem;
+}
+
+.slot-group.has-long-name .person-surname,
+.slot-group.has-long-name .person-name {
+    font-size: 0.85rem;
 }
 
 .slot-empty {
@@ -518,6 +563,15 @@ body.board-page.is-ready {
     background: var(--today-bg);
     border-left-color: transparent;
     box-shadow: 0 0 0 2px var(--today-ring), var(--today-shadow);
+}
+
+.day.is-next {
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+.day.is-next .day-head {
+    color: #fff;
 }
 
 .day.is-today .day-weekday,
@@ -553,6 +607,18 @@ body.board-page.is-ready {
 }
 
 /* --- Строка состояния --- */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
 
 .status {
     justify-self: end;

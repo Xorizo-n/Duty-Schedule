@@ -26,6 +26,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15000;
 const VERSION_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const STARTUP_RETRY_MS = 3000;
+const NAMES_PAGE_INTERVAL_MS = 8000;
 
 class DutyScheduleApp {
     constructor() {
@@ -36,6 +37,7 @@ class DutyScheduleApp {
         this.scheduleElement = document.getElementById("schedule");
         this.statusElement = document.getElementById("status");
         this.statusTextElement = document.getElementById("status-text");
+        this.statusAnnouncement = document.getElementById("status-announcement");
 
         // Серверное время: момент по UTC, сдвиг пояса сервера и отметка
         // performance.now(), от которой идут локальные часы.
@@ -60,6 +62,7 @@ class DutyScheduleApp {
         this.isReloading = false;
         this.retryTimeout = null;
         this.performanceGuard = null;
+        this.namesPageInterval = null;
 
         this.init();
     }
@@ -68,6 +71,7 @@ class DutyScheduleApp {
         this.fetchData();
         this.dataUpdateInterval = setInterval(() => this.fetchData(), 30000);
         this.versionCheckInterval = setInterval(() => this.checkVersion(), VERSION_CHECK_INTERVAL_MS);
+        this.namesPageInterval = setInterval(() => this.updatePagedNames(), NAMES_PAGE_INTERVAL_MS);
         this.performanceGuard = new PerformanceGuard(document.documentElement);
         this.performanceGuard.start();
         // Фон создаётся до первого tick(): часы сразу выставляют ему оттенок
@@ -202,9 +206,11 @@ class DutyScheduleApp {
     }
 
     setStatus(state, text, details = "") {
+        const previousState = this.statusElement.dataset.state;
         this.statusElement.dataset.state = state;
         this.statusTextElement.textContent = text;
         this.statusElement.title = details || "";
+        if (previousState !== state && this.statusAnnouncement) this.statusAnnouncement.textContent = text;
     }
 
     // --- Время -----------------------------------------------------------
@@ -287,6 +293,44 @@ class DutyScheduleApp {
             this.renderSchedule(this.data.weeks || [], todayIso);
         }
         this.updateShiftStates(todayIso, minuteOfDay);
+        this.updateUpcomingDay(todayIso, minuteOfDay);
+        this.updatePagedNames();
+    }
+
+    updateUpcomingDay(todayIso, minuteOfDay) {
+        const days = (this.data.weeks || []).flat();
+        const today = days.find((day) => day.date === todayIso);
+        const hasPending = this.getShifts(today).some((shift) => minuteOfDay < SHIFTS[shift.kind].end);
+        const next = hasPending ? today : days.find((day) => day.date > todayIso && this.getShifts(day).length);
+        this.dayElements.forEach((entry, date) => {
+            entry.element.classList.toggle("is-next", !!next && date === next.date && date !== todayIso);
+        });
+    }
+
+    updatePagedNames() {
+        const step = Math.floor(Date.now() / NAMES_PAGE_INTERVAL_MS);
+        document.querySelectorAll(".paged-names").forEach((container) => {
+            const people = [...container.querySelectorAll(".paged-person")];
+            const pageSize = Number(container.dataset.pageSize) || 1;
+            const pages = Math.ceil(people.length / pageSize);
+            if (!pages) return;
+            const page = step % pages;
+            people.forEach((person, index) => { person.hidden = Math.floor(index / pageSize) !== page; });
+            container.querySelector(".names-page").textContent = `${page + 1}/${pages}`;
+        });
+    }
+
+    paginateNames(container, people, pageSize) {
+        if (people.length <= pageSize) return;
+        container.classList.add("paged-names");
+        container.dataset.pageSize = String(pageSize);
+        people.forEach((person) => {
+            person.classList.add("paged-person");
+            person.setAttribute("aria-hidden", "true");
+        });
+        const counter = this.createElement("span", "names-page");
+        counter.setAttribute("aria-hidden", "true");
+        container.append(counter);
     }
 
     // Смена, которая идёт сейчас, подсвечивается и в сетке, завершённые
@@ -316,18 +360,25 @@ class DutyScheduleApp {
 
     groupedNames(day, kind) {
         if (!day.groups) return this.splitPersons(day[kind]);
-        return Object.entries(day.groups).flatMap(([group, shifts]) =>
-            this.splitPersons(shifts[kind]).map((name) => `${group}: ${name}`));
+        return ["РТФ", "ИНЭУ"].flatMap((group) =>
+            this.splitPersons(day.groups[group]?.[kind]).map((name) => `${group}: ${name}`));
     }
 
     createGroupedPersons(day, kind, showGroup = false) {
         if (!day.groups) return this.createPersons(day[kind]);
         return ["РТФ", "ИНЭУ"].map((group) => {
             const row = this.createElement("div", "slot-group");
-            const names = this.splitPersons(day.groups[group]?.[kind]);
+            const value = day.groups[group]?.[kind];
+            row.setAttribute("role", "group");
+            const names = this.splitPersons(value);
+            row.setAttribute("aria-label", `${showGroup ? "Суббота" : SHIFTS[kind].label}, ${group}${names.length > 1 ? ": " + names.join(", ") : ""}`);
             if (showGroup) row.append(this.createElement("span", "saturday-group-label", group));
-            row.append(...(names.length ? names.map((name) => this.createElement("div", "person", name)) :
-                [this.createElement("span", "slot-empty", "—")]));
+            const people = this.createPersons(value);
+            row.append(...people);
+            this.paginateNames(row, people, 1);
+            if (names.some((name) => name.split(/\s+/).some((word) => word.length > 14))) {
+                row.classList.add("has-long-name");
+            }
             return row;
         });
     }
@@ -422,6 +473,7 @@ class DutyScheduleApp {
     createHeroShift(shift) {
         const meta = SHIFTS[shift.kind];
         const card = this.createElement("div", `hero-shift shift-${shift.kind} is-${shift.state}`);
+        if (shift.names.some((name) => name.length > 24)) card.classList.add("has-long-name");
 
         const top = this.createElement("div", "hero-shift-top");
         top.append(this.createIcon(shift.kind));
@@ -445,6 +497,11 @@ class DutyScheduleApp {
             }
             names.append(person);
         });
+        if (shift.names.length > 2) {
+            names.setAttribute("role", "group");
+            names.setAttribute("aria-label", shift.names.join(", "));
+            this.paginateNames(names, [...names.children], 2);
+        }
 
         card.append(top, names);
 
@@ -503,7 +560,10 @@ class DutyScheduleApp {
             const label = this.createElement("div", `shift-label shift-${kind}`);
             label.append(this.createIcon(kind));
             ["РТФ", "ИНЭУ"].forEach((group) => {
-                label.append(this.createElement("span", "shift-group-label", group));
+                const groupLabel = this.createElement("span", "shift-group-label");
+                groupLabel.append(this.createElement("span", "shift-label-name", SHIFTS[kind].label));
+                groupLabel.append(this.createElement("span", "shift-group-name", group));
+                label.append(groupLabel);
             });
             labels.append(label);
         });
@@ -667,6 +727,7 @@ class DutyScheduleApp {
         clearTimeout(this.tickTimeout);
         clearInterval(this.dataUpdateInterval);
         clearInterval(this.versionCheckInterval);
+        clearInterval(this.namesPageInterval);
         clearTimeout(this.retryTimeout);
         this.background.destroy();
         this.performanceGuard.destroy();
